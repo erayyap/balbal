@@ -1,0 +1,22 @@
+# Weights, exported graphs, language models and data are not part of this repository.
+models/
+weights/
+data/
+runs/
+*.pt
+*.pth
+*.nemo
+*.ckpt
+*.onnx
+*.onnx.data
+*-ext.data
+*.arpa
+*.bin
+*.binary
+*.npz
+*.npy
+# Built decoder extension
+*.so
+__pycache__/
+*.pyc
+.venv*/

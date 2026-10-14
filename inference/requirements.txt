@@ -1,0 +1,4 @@
+numpy==2.2.6
+sentencepiece==0.2.2
+flashlight-text==0.0.7
+pybind11==2.10.4
