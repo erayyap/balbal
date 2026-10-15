@@ -4,6 +4,7 @@ MODEL_DIR must contain model-ext.onnx + model-ext.data (from export_onnx.py; the
 and lm/{model.binary, tokenizer.model}. CPU arena, memory patterns and weight prepacking are off to keep RSS low.
 
   python runtime_onnx.py --model-dir MODEL_DIR speech.wav [more.wav ...]
+  python runtime_onnx.py --model-dir MODEL_DIR --hotwords "Arslan,Zaynep" call.wav   # favour these names
   from runtime_onnx import Engine; Engine(MODEL_DIR).transcribe(wave)['text']   # mono float32, 16 kHz
 Audio longer than 30 s is cut into fixed 30 s chunks (no VAD), as in transcribe.py.
 """
@@ -34,16 +35,16 @@ class Engine:
         self.decoder = KenLMDecoder(model_dir / 'lm')
         self.transcribe(np.zeros(16000, dtype=np.float32))   # warm-up
 
-    def _chunk(self, wave):
+    def _chunk(self, wave, hotwords=None):
         if len(wave) < 4000:   # the convolutional subsampler needs at least 0.25 s
             wave = np.pad(wave, (0, 4000 - len(wave)))
         a = self.session.run(None, {'audio': np.ascontiguousarray(wave, dtype=np.float32)[None]})[0]
-        return self.decoder.decode(a)
+        return self.decoder.decode(a, hotwords)
 
-    def transcribe(self, wave, chunk_seconds=30.):
+    def transcribe(self, wave, chunk_seconds=30., hotwords=None):
         wave = np.asarray(wave, dtype=np.float32)
         start = time.perf_counter(); step = int(chunk_seconds * 16000)
-        texts = [self._chunk(wave[i:i + step]) for i in range(0, len(wave), step)]
+        texts = [self._chunk(wave[i:i + step], hotwords) for i in range(0, len(wave), step)]
         elapsed = time.perf_counter() - start
         return {'text': ' '.join(t for t in texts if t), 'duration_seconds': len(wave) / 16000,
                 'inference_seconds': elapsed, 'realtime_factor': len(wave) / 16000 / elapsed}
@@ -55,10 +56,12 @@ def main():
     p.add_argument('audio', type=Path, nargs='+')
     p.add_argument('--model-dir', type=Path, default=Path(os.getenv('BALBAL_MODEL_DIR', ROOT.parent / 'models')))
     p.add_argument('--threads', type=int, default=None)
+    p.add_argument('--hotwords', default='', help='comma-separated names/words to favour, e.g. "Arslan,Zaynep"')
     args = p.parse_args()
+    hotwords = [w.strip() for w in args.hotwords.split(',') if w.strip()]
     engine = Engine(args.model_dir, args.threads)
     for path in args.audio:
-        print(json.dumps({'file': str(path), **engine.transcribe(read_audio(path))}, ensure_ascii=False), flush=True)
+        print(json.dumps({'file': str(path), **engine.transcribe(read_audio(path), hotwords=hotwords)}, ensure_ascii=False), flush=True)
 
 
 if __name__ == '__main__':

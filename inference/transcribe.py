@@ -111,8 +111,9 @@ class Transcriber:
         if self.device.startswith('cuda'):
             self.torch.cuda.synchronize()
 
-    def transcribe_waveform(self, wave, *, chunk_seconds=30.):
-        """Mono float32 waveform at 16 kHz. Audio longer than 30 s is cut into fixed 30 s chunks (no VAD)."""
+    def transcribe_waveform(self, wave, *, chunk_seconds=30., hotwords=None):
+        """Mono float32 waveform at 16 kHz. Audio longer than 30 s is cut into fixed 30 s chunks (no VAD).
+        hotwords: optional names/words to favour (see decoder.KenLMDecoder.decode)."""
         wave = np.asarray(wave, dtype=np.float32)
         if wave.ndim != 1 or not wave.size or not np.isfinite(wave).all():
             raise ValueError('Expected a nonempty, finite mono 16 kHz waveform')
@@ -131,7 +132,7 @@ class Transcriber:
                 emissions = log_probs[0, :int(encoded[0])].float().cpu().numpy()
             self.model.ctc_extra.clear()
             self._sync(); acoustic = time.perf_counter() - tick
-            tick = time.perf_counter(); text = self.decoder.decode(emissions); decoding = time.perf_counter() - tick
+            tick = time.perf_counter(); text = self.decoder.decode(emissions, hotwords); decoding = time.perf_counter() - tick
             segments.append(dict(start_seconds=start / 16000, end_seconds=(start + original) / 16000, text=text,
                                  acoustic_seconds=acoustic, decoder_seconds=decoding))
         elapsed = sum(s['acoustic_seconds'] + s['decoder_seconds'] for s in segments)
@@ -139,8 +140,8 @@ class Transcriber:
                     device=self.device, segments=segments, inference_seconds=elapsed,
                     realtime_speed=(len(wave) / 16000 / elapsed) if elapsed else None)
 
-    def transcribe(self, path, *, chunk_seconds=30.):
-        return self.transcribe_waveform(read_audio(path), chunk_seconds=chunk_seconds)
+    def transcribe(self, path, *, chunk_seconds=30., hotwords=None):
+        return self.transcribe_waveform(read_audio(path), chunk_seconds=chunk_seconds, hotwords=hotwords)
 
 
 def main():
@@ -150,12 +151,14 @@ def main():
     p.add_argument('--device', choices=['auto', 'cpu', 'cuda'], default='auto')
     p.add_argument('--threads', type=int, default=4)
     p.add_argument('--text-only', action='store_true')
+    p.add_argument('--hotwords', default='', help='comma-separated names/words to favour, e.g. "Arslan,Zaynep"')
     args = p.parse_args()
+    hotwords = [w.strip() for w in args.hotwords.split(',') if w.strip()]
     with redirect_stdout(sys.stderr):  # keep stdout one JSON object per file
         engine = Transcriber(args.model_dir, args.device, args.threads)
     for path in args.audio:
         with redirect_stdout(sys.stderr):
-            result = engine.transcribe(path)
+            result = engine.transcribe(path, hotwords=hotwords)
         print(result['text'] if args.text_only else json.dumps({'file': str(path), **result}, ensure_ascii=False), flush=True)
 
 

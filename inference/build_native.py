@@ -1,4 +1,4 @@
-"""Build the tiny token bonus wrapper for the pinned Flashlight wheel."""
+"""Build the tiny token bonus + hotword wrappers for the pinned Flashlight wheel."""
 from pathlib import Path
 import importlib.metadata
 import os
@@ -37,6 +37,13 @@ state = lm.start(False)
 state, score = lm.score(state, 0)
 assert abs(score - 3.0) < 1e-6
 assert abs(lm.finish(state)[1]) < 1e-6
+from ctc_lm_bonus import HotwordLM
+hot = HotwordLM(ZeroLM(), [[5, 6]], [[1.0, 2.0]])
+s = hot.start(False); s, a = hot.score(s, 5); s, b = hot.score(s, 6)
+assert (a, b, hot.finish(s)[1]) == (1.0, 2.0, 0.0)   # completed hotword keeps its bonus
+s = hot.start(False); s, a = hot.score(s, 5)
+assert hot.finish(s)[1] == -1.0                      # unfinished hotword: bonus taken back
+s, c = hot.score(s, 7); assert c == -1.0             # broken match: bonus taken back
 '''
     subprocess.run([sys.executable, '-c', code, str(ROOT / 'native')], check=True)
     print('Native decoder binding built and verified:', output.name)

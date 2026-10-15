@@ -92,6 +92,18 @@ asr = Transcriber('MODEL_DIR', device='cpu')
 print(asr.transcribe('ses.wav')['text'])
 ```
 
+**Kelime önceliği (hotwords):** kayıtta geçmesini beklediğin isimleri veya kelimeleri verirsen kod çözücü onlara öncelik verir.
+Model ve dil modeli değişmez.
+
+```bash
+python inference/runtime_onnx.py --model-dir MODEL_DIR --hotwords "Arslan,Zaynep" ses.wav   # transcribe.py'de de aynı
+```
+
+Python içinden: `asr.transcribe('ses.wav', hotwords=['Arslan', 'Zaynep'])`. Kelimeye uyan her token, harf başına
+`hotword_bonus` (`configs/decoder.json`, 1.0) kadar puan alır. Kelime tamamlanmazsa bu puan geri alınır. Ayar geliştirme
+setinde seçildi: her klibin isimleri ve 10 alakasız isim verildiğinde isimlerin doğru yazılma oranı %66'dan %85'e çıktı;
+yalnızca alakasız isimler verildiğinde WER yaklaşık 0.2 puan arttı.
+
 ## Normalizer
 
 - `normalizer/turkish.py` — `normalize_turkish()`: küçük harf (Türkçe İ/ı), noktalama, sayılar/semboller/e-posta sözcükleri; v1 puanlama
@@ -169,7 +181,10 @@ Mu-Bench tr-TR **11.93 WER** (official scoring).
 code is not included.
 
 - `inference/` — PyTorch/NeMo transcriber (`transcribe.py`), torch-free ONNX CPU runtime (`runtime_onnx.py`), ONNX export
-  (`export_onnx.py`), KenLM beam decoder with a small native extension (`build_native.py`).
+  (`export_onnx.py`), KenLM beam decoder with a small native extension (`build_native.py`). Optional hotword biasing:
+  `--hotwords "Arslan,Zaynep"` (or `hotwords=[...]` in Python) favours expected names; a per-character bonus
+  (`hotword_bonus` in `configs/decoder.json`) is kept only for completed words. On our development set, given each clip's names
+  plus 10 unrelated ones, name recall rose from 66% to 85%; unrelated names alone cost about +0.2 WER.
 - `normalizer/` — Turkish normalization, v2 scoring (`corpus_metrics_v2`), digit verbalization for words-only labels, label
   cleaning, inverse text normalization (number words → digits).
 - `training/` — the training loop of the final balbal-v1 stage (Muon + AdamW, telephone/edge augmentation, 0.3/0.7 base/refiner CTC

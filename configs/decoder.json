@@ -5,5 +5,6 @@
   "blank_bias": 0.0,
   "beam": 64,
   "top_tokens": 12,
-  "threshold": 8.0
+  "threshold": 8.0,
+  "hotword_bonus": 1.0
 }
