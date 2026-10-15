@@ -137,7 +137,8 @@ ROCm'da eğitim adımlarında MIOpen kapalıdır (yaklaşık %41 daha hızlı); 
 
 ## Lisans
 
-Henüz belirlenmedi. Üçüncü taraf lisansları: `inference/licenses/`
+Kod [Apache License 2.0](LICENSE) ile lisanslanmıştır (Copyright 2026 Eray Yapağcı). Lisans yalnızca bu depodaki kodu kapsar;
+model ağırlıkları bu lisansa dahil değildir ve henüz yayımlanmadı. Üçüncü taraf lisansları: `inference/licenses/`
 (flashlight-text, KenLM).
 
 ---
@@ -160,4 +161,5 @@ code is not included.
   objective), weight soups, KenLM build, decoder calibration. The original run also ranked checkpoints with KenLM on an internal
   DEV set; here checkpoint ranking uses greedy v2 WER on your `--dev`.
 
-License: to be decided.
+License: the code is under the [Apache License 2.0](LICENSE) (Copyright 2026 Eray Yapağcı). It covers the code in this
+repository only; the model weights are not covered and are not released yet. Third-party licenses: `inference/licenses/`.
