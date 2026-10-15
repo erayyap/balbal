@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use balbal-v1 in your work, please cite it as below."
+title: "balbal-v1: A Small Turkish Speech Recognition Model"
+authors:
+  - family-names: "Yapağcı"
+    given-names: "Eray"
+date-released: 2026-10-14
+url: "https://erayy.com/balbal-blog"
+repository-code: "https://github.com/erayyap/balbal"
+license: Apache-2.0
+type: software

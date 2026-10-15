@@ -135,6 +135,21 @@ TEL_P=0.5 EDGE_P=0.5 LOADER_WORKERS=8 python training/train.py runs/balbal-v1 \
 
 ROCm'da eğitim adımlarında MIOpen kapalıdır (yaklaşık %41 daha hızlı); değerlendirmede açıktır.
 
+## Atıf
+
+balbal-v1'i bir çalışmada kullanırsan şöyle atıf verebilirsin:
+
+```bibtex
+@misc{yapagci2026balbal,
+  author       = {Eray Yapa{\u{g}}c{\i}},
+  title        = {balbal-v1: A Small Turkish Speech Recognition Model},
+  year         = {2026},
+  month        = oct,
+  howpublished = {\url{https://erayy.com/balbal-blog}},
+  note         = {Code: \url{https://github.com/erayyap/balbal}}
+}
+```
+
 ## Lisans
 
 Kod [Apache License 2.0](LICENSE) ile lisanslanmıştır (Copyright 2026 Eray Yapağcı). Lisans yalnızca bu depodaki kodu kapsar;
@@ -160,6 +175,8 @@ code is not included.
 - `training/` — the training loop of the final balbal-v1 stage (Muon + AdamW, telephone/edge augmentation, 0.3/0.7 base/refiner CTC
   objective), weight soups, KenLM build, decoder calibration. The original run also ranked checkpoints with KenLM on an internal
   DEV set; here checkpoint ranking uses greedy v2 WER on your `--dev`.
+
+Citation: if you use balbal-v1 in your work, please cite it with the BibTeX entry above (also in `CITATION.cff`).
 
 License: the code is under the [Apache License 2.0](LICENSE) (Copyright 2026 Eray Yapağcı). It covers the code in this
 repository only; the model weights are not covered and are not released yet. Third-party licenses: `inference/licenses/`.
