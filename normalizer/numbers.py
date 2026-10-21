@@ -7,7 +7,7 @@ verbalize(text) -> words text, or None when any digit token is not in a safe for
   'N.' + lowercase word -> ordinal (10. yüzyıl -> onuncu yüzyıl), runs of single spaced digits read one by one (2 0 3 8).
   unsafe -> None: 'N.' before a capitalised word (ordinal or sentence end?), suffix vowel-harmony typos (53'u), leading zeros (0532), decimals / thousands dots (1,2  1.000  26.0), times (14:30), ranges (3-4), glued
   alphanumerics (Paket24, Adsl2), more than 12 digits.
-v2 scoring equates number words and digits, so a words-only model is not penalised on digit references."""
+balbal-normalizer scoring equates number words and digits, so a words-only model is not penalised on digit references."""
 import re
 ONES = ['', 'bir', 'iki', 'üç', 'dört', 'beş', 'altı', 'yedi', 'sekiz', 'dokuz']
 TENS = ['', 'on', 'yirmi', 'otuz', 'kırk', 'elli', 'altmış', 'yetmiş', 'seksen', 'doksan']

@@ -1,7 +1,7 @@
 """DEV-only decoder calibration check for a new checkpoint + its own LM.
 
 A 9-point grid around the deployed decoder (configs/decoder.json: alpha 0.75, beta 1.5, temperature 1.2, beam 64,
-top-12 tokens, threshold 8): alpha {0.6, 0.75, 0.9} x temperature {1.0, 1.2, 1.4}, v2 WER/CER on DEV.
+top-12 tokens, threshold 8): alpha {0.6, 0.75, 0.9} x temperature {1.0, 1.2, 1.4}, balbal-normalizer WER/CER on DEV.
 Switch rule: the best grid point replaces the deployed settings only if its WER is lower with a paired clip-level
 bootstrap 95% CI (2000 resamples, seed 20261009) entirely below 0 and its CER is no worse. For balbal-v1 the
 deployed settings were kept. Never calibrate on TEST.

@@ -13,7 +13,7 @@ and the released weights are the raw step-6000 checkpoint (checkpoints/step6000.
   (everything else, betas .9/.98, weight decay .001; memory value table at 5x LR, no decay), guarded against
   nonfinite/oversized updates. LR: 10-step linear warmup, cosine from 1 to 0.1 over --updates. Gradient clip 1.0.
 - Fast path on (byte-exact), cuDNN/MIOpen off during training steps on ROCm (it is ~41 % slower there) and on in evals.
-- Every --eval-every updates (and at the end): greedy WER (v2 scoring) on --dev, overall and per `source`; for each
+- Every --eval-every updates (and at the end): greedy WER (balbal-normalizer scoring) on --dev, overall and per `source`; for each
   --soup share w also the weight soup w*current + (1-w)*init. The 5 best raw checkpoints by the best dev WER among raw
   and soups are kept in OUT/checkpoints (index: best.json). The original run additionally ranked checkpoints with the
   deployed KenLM decoder on its internal DEV set; that ranking is not part of this release.

@@ -1,6 +1,6 @@
-"""Scoring normalizer v2. Report next to v1 (normalizer.turkish); v1 stays the historical metric.
+"""balbal-normalizer: the scoring normalizer (formerly called v2). Report next to v1 (normalizer.turkish); v1 stays the historical metric.
 
-v1 is unchanged. v2 = v1 plus these fixes, applied the same way to every model:
+v1 is unchanged. balbal-normalizer = v1 plus these fixes, applied the same way to every model:
   tags        references only: remove annotated non-speech stage directions ("gülme efekti", "müzik", ...) listed in an
               optional normalizer/scoring_v2_reference_tags.json (not shipped; FLEURS and Mu-Bench need none).
               Hypotheses are NOT stripped: a model that writes "gülme" for laughter is charged an insertion.
@@ -231,7 +231,7 @@ def strip_reference_tags(text):
 
 
 def normalize_v2(text, *, reference, fixes=ALL_FIXES):
-    """Single-side v2 normalization (everything except the pairwise compound fix)."""
+    """Single-side balbal-normalizer normalization (everything except the pairwise compound fix)."""
     value = unicodedata.normalize('NFC', '' if text is None else str(text))
     if 'tags' in fixes:
         if reference: value = strip_reference_tags(value)
@@ -290,7 +290,7 @@ def normalize_pair_v2(reference, hypothesis, fixes=ALL_FIXES):
 
 
 def corpus_metrics_v2(references, hypotheses, fixes=ALL_FIXES):
-    """Same accounting as normalizer.turkish.normalized_corpus_metrics (empty refs add insertions), v2 normalization."""
+    """Same accounting as normalizer.turkish.normalized_corpus_metrics (empty refs add insertions), balbal-normalizer normalization."""
     import jiwer
     if not references or len(references) != len(hypotheses):
         raise ValueError('nonempty aligned references and hypotheses required')
