@@ -3,7 +3,8 @@
 Bu depo **balbal-v1** Türkçe konuşma tanıma modelinin çıkarım (inference), metin normalizasyonu ve eğitim kodunu içerir.
 
 > **Ağırlıklar Hugging Face'te:** [erayyapagci/balbal-v1](https://huggingface.co/erayyapagci/balbal-v1) (model, tokenizer, KenLM;
-> **CC BY-NC 4.0**: araştırma ve ince ayar serbest, ticari kullanım yok). Kod, ağırlıkları bir klasörden (`MODEL_DIR`) okur.
+> [balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE): araştırma ve ticari olmayan kullanım serbest; küçük işletmeler kendi işlerinde ticari olarak da
+> ücretsiz kullanabilir; konuşma tanıma ürünü satmak için ticari lisans gerekir). Kod, ağırlıkları bir klasörden (`MODEL_DIR`) okur.
 
 ## Mimari
 
@@ -210,9 +211,9 @@ balbal-v1'i bir çalışmada kullanırsan şöyle atıf verebilirsin:
 ## Lisans
 
 Kod [Apache License 2.0](LICENSE) ile lisanslanmıştır (Copyright 2026 Eray Yapağcı). Lisans yalnızca bu depodaki kodu kapsar.
-Model ağırlıkları, tokenizer ve dil modeli ayrı olarak [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) ile
-[Hugging Face'te](https://huggingface.co/erayyapagci/balbal-v1) yayımlanmıştır: araştırma, değerlendirme ve ince ayar serbest,
-ticari kullanım yok. Üçüncü taraf lisansları: `inference/licenses/` (flashlight-text, KenLM).
+Model ağırlıkları, tokenizer ve dil modeli ayrı olarak [balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE) ile
+[Hugging Face'te](https://huggingface.co/erayyapagci/balbal-v1) yayımlanmıştır: araştırma ve ticari olmayan kullanım serbest,
+küçük işletmeler kendi işlerinde ticari olarak da kullanabilir; konuşma tanıma ürünü satmak için ticari lisans gerekir. Üçüncü taraf lisansları: `inference/licenses/` (flashlight-text, KenLM).
 
 ---
 
@@ -224,7 +225,8 @@ KenLM (flashlight-text, alpha 0.75, beta 1.5, T 1.2, beam 64). Results: FLEURS t
 Mu-Bench tr-TR **11.93 WER** (official scoring).
 
 **Weights** (model, tokenizer, KenLM) are on Hugging Face: [erayyapagci/balbal-v1](https://huggingface.co/erayyapagci/balbal-v1),
-under **CC BY-NC 4.0** (research, evaluation and fine-tuning allowed; no commercial use). The code loads them from a `MODEL_DIR`
+under the [balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE) (free for research and non-commercial use, and for small businesses' own
+commercial use; selling speech products built on it needs a commercial license). The code loads them from a `MODEL_DIR`
 (layout above): `huggingface-cli download erayyapagci/balbal-v1 --local-dir MODEL_DIR`.
 
 - `inference/` — PyTorch/NeMo transcriber (`transcribe.py`), torch-free ONNX CPU runtime (`runtime_onnx.py`), ONNX export
@@ -247,5 +249,5 @@ Citation: if you use balbal-v1 in your work, please cite it with the BibTeX entr
 
 License: the code is under the [Apache License 2.0](LICENSE) (Copyright 2026 Eray Yapağcı). It covers the code in this
 repository only. The weights, tokenizer and language model are released separately under
-[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) on [Hugging Face](https://huggingface.co/erayyapagci/balbal-v1).
+the [balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE) on [Hugging Face](https://huggingface.co/erayyapagci/balbal-v1).
 Third-party licenses: `inference/licenses/`.
