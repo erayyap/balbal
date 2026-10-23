@@ -57,12 +57,13 @@ class MemoryLoopRefiner(LoopedCTCRefiner):
                 self.acoustic_memory.pass_index = k
                 retrieved = self.acoustic_memory(recalled, probs.detach(), valid, dropout_draw)
                 change = self.memory_strength * retrieved.to(recalled.dtype)
-                with torch.no_grad():
-                    stats = dict(self.acoustic_memory.last_diagnostics)
-                    stats['memory_relative_rms'] = (
-                        change.float().square().sum() /
-                        recalled.float().masked_fill(pad[..., None], 0.).square().sum().clamp_min(1e-8)).sqrt()
-                    diagnostics.append(stats)
+                if self.training:
+                    with torch.no_grad():
+                        stats = dict(self.acoustic_memory.last_diagnostics)
+                        stats['memory_relative_rms'] = (
+                            change.float().square().sum() /
+                            recalled.float().masked_fill(pad[..., None], 0.).square().sum().clamp_min(1e-8)).sqrt()
+                        diagnostics.append(stats)
                 recalled = recalled + change
             proposal = self.block(recalled, memory, tgt_key_padding_mask=pad,
                                   memory_key_padding_mask=pad)

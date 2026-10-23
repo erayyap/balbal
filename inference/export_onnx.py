@@ -8,7 +8,13 @@ Batch 1, all frames valid (the serving path). Export-only substitutions, each ch
 - refiner nn.MultiheadAttention (its traced reshapes freeze the example length) as a shape-agnostic attention with
   the same weights and key padding masks (the frontend's extra last STFT frame is padding, as in NeMo);
 - product-key memory read: F.embedding_bag(sum, per_sample_weights) as a gather + weighted sum; eval batch-norm of queries
-  written out, padded frames zeroed with masked_fill instead of boolean-mask indexing.
+  written out, padded frames zeroed with masked_fill instead of boolean-mask indexing;
+- encoder rel-pos self-attention: the relative shift as one slice of the flattened scores (no pad), the [T, T] mask as an
+  additive key-padding bias (rows of padded frames are no longer zeroed; fp32 outputs are unchanged, a dynamically quantized int8 graph is not
+  bit-identical, since activation ranges include the padded frame);
+  subsampling time masks broadcast instead of expanded, applied before each conv only; refiner key padding masks as an
+  additive -inf bias; memory subkey scores as MatMul instead of Einsum (onnxruntime runs Where/Pad/Slice/Einsum on one
+  thread).
 Writes OUT/model.onnx, OUT/export.json (parity numbers) and, unless --no-externalize, OUT/model-ext.onnx +
 OUT/model-ext.data (tensors >= 64 KiB moved to a 64 KiB-aligned file that onnxruntime memory-maps).
   python export_onnx.py --model-dir MODEL_DIR --out MODEL_DIR clip1.wav clip2.wav ...   # 16 kHz parity clips
@@ -71,10 +77,10 @@ def patch_memory(memory):
 
     def retrieve(query):
         keys = F.normalize(memory.keys.float(), dim=-1, eps=1e-6)
-        left = torch.einsum('...hd,hsd->...hs', query[..., 0, :], keys[:, 0])
-        right = torch.einsum('...hd,hsd->...hs', query[..., 1, :], keys[:, 1])
-        ls, li = left.topk(memory.top_k, dim=-1)
-        rs, ri = right.topk(memory.top_k, dim=-1)
+        # [B, H, T, D] @ [H, D, S] as one batched MatMul (onnxruntime's Einsum is much slower); top-k back to [B, T, H, K]
+        score = lambda side: torch.matmul(query[..., side, :].transpose(1, 2), keys[:, side].transpose(-1, -2))
+        ls, li = (x.transpose(1, 2) for x in score(0).topk(memory.top_k, dim=-1))
+        rs, ri = (x.transpose(1, 2) for x in score(1).topk(memory.top_k, dim=-1))
         scores, pairs = (ls[..., :, None] + rs[..., None, :]).flatten(-2).topk(memory.top_k, dim=-1)
         indices = li.gather(-1, pairs // memory.top_k) * memory.subkeys + ri.gather(-1, pairs % memory.top_k)
         weights = (scores / memory.temperature).softmax(-1)
@@ -97,8 +103,9 @@ class Attention(nn.Module):
         split = lambda x: x.reshape(x.shape[0], x.shape[1], h, -1).transpose(1, 2)    # [B, H, T, D]
         q, k, v = split(q), split(k), split(v)
         scores = torch.matmul(q, k.transpose(-1, -2)) * (q.shape[-1] ** -.5)
-        if key_padding_mask is not None:
-            scores = scores.masked_fill(key_padding_mask[:, None, None, :], float('-inf'))
+        if key_padding_mask is not None:   # additive [B, 1, 1, T] bias: same result as masked_fill on [B, H, T, T]
+            scores = scores + torch.zeros_like(key_padding_mask, dtype=scores.dtype).masked_fill(
+                key_padding_mask, float('-inf'))[:, None, None, :]
         out = torch.matmul(scores.softmax(-1), v).transpose(1, 2)
         return self.mha.out_proj(out.reshape(out.shape[0], out.shape[1], -1)), None
 
@@ -106,6 +113,54 @@ class Attention(nn.Module):
 def patch_attention(block):
     for layer in block.layers:
         layer.self_attn, layer.multihead_attn = Attention(layer.self_attn), Attention(layer.multihead_attn)
+
+
+def patch_encoder(encoder):
+    from nemo.collections.asr.parts.submodules import multi_head_attention, subsampling
+    inf = multi_head_attention.INF_VAL
+
+    def masked_conv(conv, x, lengths):
+        # NeMo MaskedConvSequential with the time mask broadcast (not expanded) and applied before each conv and at the end
+        # only (relu(x) * m == relu(x * m) for a 0/1 mask).
+        x, current = x.unsqueeze(1), lengths.clone().float()
+        mask = conv._create_mask(x, current.long())[:, None]
+        for layer in conv:
+            if isinstance(layer, nn.Conv2d):
+                x = layer(x * mask)
+                if layer.stride != (1, 1):
+                    current = subsampling.calculate_conv_output_size(
+                        current, layer.kernel_size[0], layer.stride[0], layer.padding)
+                    mask = conv._create_mask(x, current.long())[:, None]
+            else:
+                x = layer(x)
+        return x * mask, current.long()
+
+    conv = encoder.pre_encode.conv
+    assert type(conv) is subsampling.MaskedConvSequential and all(type(m) in (nn.Conv2d, nn.ReLU) for m in conv)
+    conv.forward = masked_conv.__get__(conv)
+
+    def attention(a, query, key, value, mask, pos_emb, cache=None):
+        assert cache is None and mask is not None and not a.use_pytorch_sdpa
+        q, k, v = a.forward_qkv(query, key, value)
+        q = q.transpose(1, 2)
+        p = a.linear_pos(pos_emb).view(pos_emb.size(0), -1, a.h, a.d_k).transpose(1, 2)    # [B, H, 2T-1, D]
+        q_with_bias_u = (q + a.pos_bias_u).transpose(1, 2)
+        q_with_bias_v = (q + a.pos_bias_v).transpose(1, 2)
+        b, h, t, _ = q_with_bias_v.shape
+        # NeMo rel_shift: out[i, j] = bd[i, T - 1 - i + j]. With one spare column (width 2T) that is
+        # flat[i * (2T - 1) + T - 1 + j]: one slice of the flattened scores + a reshape, instead of pad + two slices.
+        p = torch.cat([p, p[:, :, :1]], 2)                                                  # [B, H, 2T, D]
+        bd = torch.matmul(q_with_bias_v, p.transpose(-2, -1))
+        bd = bd.reshape(b, h, -1)[:, :, t - 1:t - 1 + t * (2 * t - 1)].reshape(b, h, t, 2 * t - 1)[:, :, :, :t]
+        scores = (torch.matmul(q_with_bias_u, k.transpose(-2, -1)) + bd) / a.s_d_k
+        # Row 0 (a valid frame) of the [B, T, T] mask is the key padding. Masked keys get weight exactly 0, as with NeMo's
+        # masked_fill; rows of padded frames are not zeroed.
+        scores = scores + mask[:, :1, None, :].to(scores.dtype) * -inf
+        x = torch.matmul(torch.softmax(scores, dim=-1), v).transpose(1, 2).reshape(b, -1, h * a.d_k)
+        return a.linear_out(x)
+
+    for layer in encoder.layers:
+        layer.self_attn.forward = attention.__get__(layer.self_attn)
 
 
 class Exported(nn.Module):
@@ -160,7 +215,7 @@ def main():
             a, _ = model.preprocessor(input_signal=torch.from_numpy(w)[None], length=torch.tensor([len(w)]))
             b, _ = wrapper.frontend(torch.from_numpy(w)[None])
             feature_diff = max(feature_diff, float((a - b).abs().max()))
-    patch_memory(model.ctc_extra.acoustic_memory); patch_attention(model.ctc_extra.block)
+    patch_memory(model.ctc_extra.acoustic_memory); patch_attention(model.ctc_extra.block); patch_encoder(model.encoder)
     diffs, agree = [], 0
     with torch.inference_mode():
         for w, r in zip(waves, reference):

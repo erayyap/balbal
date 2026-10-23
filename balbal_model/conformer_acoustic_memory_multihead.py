@@ -84,11 +84,12 @@ class MultiHeadAcousticMemory(nn.Module):
                     if dropout_draw is None else dropout_draw).ge(self.dropout)
             gate = gate * keep / (1 - self.dropout)
         output = self.value(memory) * gate[..., None]
+        if not self.training:   # diagnostics are training-only; the refiners clear them after an eval forward
+            return output
         with torch.no_grad():
-            if self.training:
-                self.entries_queried[indices[valid].flatten()] = True
-                for h in range(self.heads):
-                    self.head_entries_queried[h, indices[..., h, :][valid].flatten()] = True
+            self.entries_queried[indices[valid].flatten()] = True
+            for h in range(self.heads):
+                self.head_entries_queried[h, indices[..., h, :][valid].flatten()] = True
             denominator = valid.sum().clamp_min(1)
             entropy = -(weights * weights.clamp_min(1e-12).log()).sum(-1)
             top = weights.max(-1).values

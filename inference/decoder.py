@@ -60,6 +60,7 @@ class KenLMDecoder:
         self.decoder = LexiconFreeDecoder(options, self.wrapped_lm, -1, self.blank_id, [])
         self._options, self._scale, self._HotwordLM, self._Decoder = options, scale, HotwordLM, LexiconFreeDecoder
         self._pieces = {self.sp.id_to_piece(i): i for i in range(self.vocab_size)}
+        self._hot = (None, None)   # (hotword list + bonus, its decoder): reused while the list stays the same
 
     def hotword_sequences(self, words, bonus_per_char):
         """Token sequences for hotword biasing: every vocabulary segmentation (up to 64) of each word as written,
@@ -72,6 +73,11 @@ class KenLMDecoder:
             for word in str(phrase).split():
                 for variant in {word, lower(word), upper1(lower(word))}:
                     text, found = '\u2581' + variant, []
+                    # ends[i]: text[i:] can be segmented; without it a character missing from the vocabulary makes the
+                    # search below exponential in the word length (every prefix segmentation is tried and fails).
+                    ends = [False] * len(text) + [True]
+                    for i in range(len(text) - 1, -1, -1):
+                        ends[i] = any(ends[j] and text[i:j] in self._pieces for j in range(i + 1, len(text) + 1))
                     def walk(i, path):
                         if len(found) >= 64:
                             return
@@ -79,7 +85,7 @@ class KenLMDecoder:
                             found.append(tuple(path)); return
                         for j in range(len(text), i, -1):
                             piece = self._pieces.get(text[i:j])
-                            if piece is not None:
+                            if piece is not None and ends[j]:
                                 walk(j, path + [piece])
                     walk(0, [])
                     seqs.update(found)
@@ -105,9 +111,14 @@ class KenLMDecoder:
         a = calibrate(a, self.settings['temperature'], self.settings['blank_bias'])
         decoder = self.decoder
         if hotwords:
-            # Per-call decoder over the shared KenLM; the hotword trie lives only for this utterance.
-            sequences = self.hotword_sequences(hotwords, float(self.settings.get('hotword_bonus', 1.0)))
-            decoder = self._Decoder(self._options, self._HotwordLM(self.wrapped_lm, *sequences), -1, self.blank_id, [])
+            # A decoder over the shared KenLM per hotword list, kept for the next call with the same list (chunks of one
+            # file, streaming updates); the beam state resets on every decode.
+            key = tuple(hotwords), float(self.settings.get('hotword_bonus', 1.0))
+            hot = self._hot
+            if hot[0] != key:
+                lm = self._HotwordLM(self.wrapped_lm, *self.hotword_sequences(*key))
+                hot = self._hot = key, self._Decoder(self._options, lm, -1, self.blank_id, [])
+            decoder = hot[1]
         hypotheses = decoder.decode(a.ctypes.data, *a.shape)
         if not hypotheses:
             raise RuntimeError('Beam search returned no hypothesis')
