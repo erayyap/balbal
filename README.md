@@ -1,46 +1,48 @@
-# balbal-v1 — Türkçe konuşma tanıma (kod)
+# balbal-v1: Turkish speech recognition (code)
 
-Bu depo **balbal-v1** Türkçe konuşma tanıma modelinin çıkarım (inference), metin normalizasyonu ve eğitim kodunu içerir.
+This repository holds the inference, text normalization and training code of **balbal-v1**, a small Turkish speech
+recognition model.
 
-> **Ağırlıklar Hugging Face'te:** [erayyapagci/balbal-v1](https://huggingface.co/erayyapagci/balbal-v1) (model, tokenizer, KenLM;
-> [balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE): araştırma ve ticari olmayan kullanım serbest; küçük işletmeler kendi işlerinde ticari olarak da
-> ücretsiz kullanabilir; konuşma tanıma ürünü satmak için ticari lisans gerekir). Kod, ağırlıkları bir klasörden (`MODEL_DIR`) okur.
+> **Weights are on Hugging Face:** [erayyapagci/balbal-v1](https://huggingface.co/erayyapagci/balbal-v1) (model, tokenizer,
+> KenLM), under the [balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE): free for
+> research and non-commercial use, and for small businesses' own commercial use; selling speech recognition products built on
+> it needs a commercial license. The code loads the weights from a folder (`MODEL_DIR`).
 
-## Mimari
+## Architecture
 
-| Parça | Ayrıntı |
+| Part | Details |
 |---|---|
-| Akustik model | Conformer-CTC (NeMo `EncDecCTCModelBPE`), 16 katman, d_model 176, 80 mel, 4x alt örnekleme (40 ms kare) |
-| Döngülü düzeltici | Kodlayıcı çıktısının üstünde 2 katmanlı Transformer düzeltici, **3 geçiş** (her geçiş bir önceki CTC dağılımını girdi alır) |
-| Akustik bellek | Ürün-anahtar (product-key) bellek: 500×500 alt anahtar, 4 kafa, top-16, değer boyutu 120, 3 karelik bağlam |
-| Sözlük | SentencePiece 1024 parça + CTC boşluk (1025 sınıf) |
-| Dil modeli | 6-gram **token** KenLM (SentencePiece parçaları üzerinde) |
-| Kod çözücü | flashlight-text sözlüksüz ışın araması: alpha 0.75, beta 1.5, sıcaklık 1.2, ışın 64, top-12 token, eşik 8 |
-| Parametre | **45.4M saklanan / 15.4M aktif** (bellek tablosunun çoğu her karede okunmaz) |
+| Acoustic model | Conformer-CTC (NeMo `EncDecCTCModelBPE`), 16 layers, d_model 176, 80 mel, 4x subsampling (40 ms frames) |
+| Loop refiner | 2-layer Transformer refiner on top of the encoder output, run for **3 passes** (each pass takes the previous CTC distribution as input) |
+| Acoustic memory | Product-key memory: 500×500 sub-keys, 4 heads, top-16, value size 120, 3-frame context |
+| Vocabulary | SentencePiece 1024 pieces + CTC blank (1025 classes) |
+| Language model | 6-gram **token** KenLM (over SentencePiece pieces) |
+| Decoder | flashlight-text lexicon-free beam search: alpha 0.75, beta 1.5, temperature 1.2, beam 64, top-12 tokens, threshold 8 |
+| Parameters | **45.4M stored / 15.4M active** (most of the memory table is not read on any given frame) |
 
-Uzun ses 30 saniyelik sabit parçalara bölünür (VAD yok); her parça ayrı çözülür.
+Long audio is cut into fixed 30 s chunks (no VAD); each chunk is decoded on its own.
 
-## Sonuçlar
+## Results
 
-| Değerlendirme | WER |
+| Evaluation | WER |
 |---|---|
 | FLEURS tr (test), balbal-normalizer, KenLM | **6.54** |
-| Mu-Bench tr-TR, resmi puanlama | **11.93** |
+| Mu-Bench tr-TR, official scoring | **11.93** |
 
-balbal-normalizer: `normalizer/metrics_v2.py` (aşağıya bakın).
+balbal-normalizer: `normalizer/metrics_v2.py` (see below).
 
-## Depo yapısı
+## Repository layout
 
 ```
-steering/       yönlendirme: bellek okumalarını bir cümleye doğru yönlendirme (auto / weak / strong)
-balbal_model/   model tanımı: döngülü CTC düzeltici + akustik bellek (NeMo Conformer'a eklenir)
-configs/        model_config.yaml (NeMo), refiner.json (düzeltici/bellek), decoder.json (kod çözücü ayarları)
-inference/      PyTorch/NeMo çıkarımı, ONNX CPU çalışma zamanı, KenLM kod çözücü, ONNX dışa aktarma
-normalizer/     Türkçe normalizasyon, balbal-normalizer puanlaması, rakam→kelime (eğitim etiketleri), ITN (kelime→rakam)
-training/       eğitim döngüsü, Muon+AdamW, veri/augmentasyon, ağırlık çorbası, KenLM kurulumu, kalibrasyon
+steering/       steering: push the memory reads toward a given sentence (auto / weak / strong)
+balbal_model/   model definition: loop CTC refiner + acoustic memory (attached to the NeMo Conformer)
+configs/        model_config.yaml (NeMo), refiner.json (refiner/memory), decoder.json (decoder settings)
+inference/      PyTorch/NeMo inference, ONNX CPU runtime, live streaming, KenLM decoder, ONNX export
+normalizer/     Turkish normalization, balbal-normalizer scoring, digits→words (training labels), ITN (words→digits)
+training/       training loop, Muon+AdamW, data/augmentation, weight soups, KenLM build, calibration
 ```
 
-## MODEL_DIR düzeni
+## MODEL_DIR layout
 
 ```
 MODEL_DIR/
@@ -49,158 +51,198 @@ MODEL_DIR/
   tokenizer/tokenizer.vocab
   tokenizer/vocab.txt
   lm/model.binary                  6-gram token KenLM (trie)
-  lm/tokenizer.model               aynı SentencePiece
-  model-ext.onnx, model-ext.data   (yalnızca ONNX çalışma zamanı için; export_onnx.py üretir)
+  lm/tokenizer.model               the same SentencePiece
+  model-ext.onnx, model-ext.data   (ONNX runtime only; written by export_onnx.py)
 ```
 
-`--model-dir MODEL_DIR` ya da `BALBAL_MODEL_DIR` ortam değişkeni ile verilir. İndirmek için:
+Pass it with `--model-dir MODEL_DIR` or the `BALBAL_MODEL_DIR` environment variable. To download:
 
 ```bash
 huggingface-cli download erayyapagci/balbal-v1 --local-dir MODEL_DIR
 ```
 
-## Çıkarım
+## Inference
 
 Linux x86-64, Python 3.12.
 
-**PyTorch/NeMo (CPU veya GPU):**
+**PyTorch/NeMo (CPU or GPU):**
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-python inference/setup_env.py --device cpu --model-dir MODEL_DIR   # torch 2.10 + sabitlenmiş NeMo, kod çözücüyü derler
-python inference/transcribe.py --model-dir MODEL_DIR ses.wav --device cpu
+python inference/setup_env.py --device cpu --model-dir MODEL_DIR   # torch 2.10 + pinned NeMo, builds the decoder
+python inference/transcribe.py --model-dir MODEL_DIR speech.wav --device cpu
 ```
 
-Çıktı dosya başına bir JSON satırı (`text`, parçalar, süreler); `--text-only` yalnızca metni yazar.
-WAV/FLAC/OGG doğrudan, diğer biçimler FFmpeg ile okunur; 16 kHz'e eğitimdeki ile aynı yeniden örnekleyici (scipy polyphase) kullanılır.
+The output is one JSON line per file (`text`, chunks, timings); `--text-only` prints only the text.
+WAV/FLAC/OGG are read directly, other formats through FFmpeg; resampling to 16 kHz uses the same resampler as training
+(scipy polyphase).
 
-**ONNX (yalnızca CPU, torch/NeMo gerekmez):**
+**ONNX (CPU only, no torch/NeMo needed):**
 
 ```bash
-python inference/export_onnx.py --model-dir MODEL_DIR ornek1.wav ornek2.wav   # bir kez, PyTorch ortamında
+python inference/export_onnx.py --model-dir MODEL_DIR sample1.wav sample2.wav   # once, in the PyTorch environment
 pip install -r inference/requirements-onnx.txt && python inference/build_native.py
-python inference/runtime_onnx.py --model-dir MODEL_DIR ses.wav                  # ASR_THREADS ile iş parçacığı
+python inference/runtime_onnx.py --model-dir MODEL_DIR speech.wav                  # threads via ASR_THREADS
 ```
 
-`export_onnx.py` mel ön ucunu DFT konvolüsyonu olarak, düzeltici dikkatini ve bellek okumayı şekilden bağımsız işlemler olarak
-yeniden yazar; verdiğiniz kliplerde NeMo modeliyle farkı (`export.json`) ölçer ve ağırlıkları 64 KiB hizalı ayrı bir dosyaya
-taşır (onnxruntime bellek eşlemesiyle okur).
+`export_onnx.py` rewrites the mel front end as a DFT convolution and the refiner attention and memory reads as
+shape-independent ops; it measures the difference to the NeMo model on the clips you give it (`export.json`) and moves the
+weights to a separate 64 KiB-aligned file (onnxruntime memory-maps it).
 
-Kod çözücü testi (yapay girdiyle): `python inference/self_test.py --model-dir MODEL_DIR`.
+Decoder self-test (synthetic input): `python inference/self_test.py --model-dir MODEL_DIR`.
 
-Python içinden:
+From Python:
 
 ```python
 import sys; sys.path.insert(0, 'inference')
 from transcribe import Transcriber
 asr = Transcriber('MODEL_DIR', device='cpu')
-print(asr.transcribe('ses.wav')['text'])
+print(asr.transcribe('speech.wav')['text'])
 ```
 
-**Kelime önceliği (hotwords):** kayıtta geçmesini beklediğin isimleri veya kelimeleri verirsen kod çözücü onlara öncelik verir.
-Model ve dil modeli değişmez.
+**Hotwords:** give the names or words you expect in the recording and the decoder favours them. The model and the language
+model do not change.
 
 ```bash
-python inference/runtime_onnx.py --model-dir MODEL_DIR --hotwords "Arslan,Zaynep" ses.wav   # transcribe.py'de de aynı
+python inference/runtime_onnx.py --model-dir MODEL_DIR --hotwords "Arslan,Zaynep" speech.wav   # same flag in transcribe.py
 ```
 
-Python içinden: `asr.transcribe('ses.wav', hotwords=['Arslan', 'Zaynep'])`. Kelimeye uyan her token, harf başına
-`hotword_bonus` (`configs/decoder.json`, 1.0) kadar puan alır. Kelime tamamlanmazsa bu puan geri alınır. Ayar geliştirme
-setinde seçildi: her klibin isimleri ve 10 alakasız isim verildiğinde isimlerin doğru yazılma oranı %66'dan %85'e çıktı;
-yalnızca alakasız isimler verildiğinde WER yaklaşık 0.2 puan arttı.
+From Python: `asr.transcribe('speech.wav', hotwords=['Arslan', 'Zaynep'])`. Every token that extends a hotword earns
+`hotword_bonus` (`configs/decoder.json`, 1.0) per character; the bonus is taken back if the word is not completed. Chosen on
+the development set: given each clip's names plus 10 unrelated names, the share of names spelled correctly rose from 66% to
+85%; with only unrelated names, WER rose by about 0.2 points.
 
-**Kelime zaman damgaları:** her sonuçta bir `words` alanı da vardır: `[{"word": "Yani", "start": 0.0, "end": 0.28}, ...]` (saniye;
-30 saniyelik parçalar kendi başlangıç zamanıyla kaydırılır). Zamanlar beam search'ün en iyi yolundaki CTC karelerinden (40 ms)
-gelir; balbal Android uygulamasının altyazılarıyla aynı yöntem (`inference/word_timing.py`). 100 geliştirme klibinde MMS zorlamalı
-hizalamasına göre kelime başlangıçlarının %94.5'i 100 ms içinde. Python içinden: `asr.transcribe('ses.wav')['words']`.
+**Word timestamps:** every result also has a `words` field: `[{"word": "Yani", "start": 0.0, "end": 0.28}, ...]` (seconds;
+30 s chunks are shifted by their start time). The times come from the CTC frames (40 ms) of the best beam-search path, the
+same method as the balbal Android app's captions (`inference/word_timing.py`). On 100 development clips, 94.5% of word starts
+are within 100 ms of MMS forced alignment. From Python: `asr.transcribe('speech.wav')['words']`.
 
-## Yönlendirme (steering)
+### Streaming (live transcription)
 
-balbal-v1, başka bir kaynaktan gelen bir cümleye doğru yönlendirilebilir (ör. daha büyük bir ASR sisteminin metni). Her düzeltici
-geçişinde bellek okumalarına küçük bir ofset eklenir ve birkaç Adam adımıyla CTC(cümle) üzerinde optimize edilir; yalnızca modelin
-emin olmadığı karelerde (en yüksek olasılık < 0.9). Ağırlıklar donuk kalır, ofset her klipten sonra atılır. Model yalnızca sesin
-izin verdiği yerde değişir: akustik olarak uymayan cümleler büyük ölçüde reddedilir, balbal'ın duyduğundan çok kısa bir cümle yok
-sayılır.
+`inference/streaming.py` transcribes a recording while it grows (a microphone, a call), with the same method as the balbal
+Android app: the audio is cut into the same 30 s chunks as offline transcription, a complete chunk is decoded once and
+kept, and the open (last, growing) chunk is decoded again on every update (default: every 0.6 s of new audio). So each
+update costs one decode of at most 30 s of audio. Text inside the open chunk can still change as more audio arrives; text of
+closed chunks (`stable_text`) never changes, and `finish()` returns exactly what offline transcription gives for the whole
+recording (words and timestamps included). balbal-v1 is a full-context model, so this is re-decoding rather than an
+incremental streaming architecture.
 
-Whisper-large-v3-turbo metniyle (WER, balbal-normalizer, KenLM):
+```bash
+arecord -q -f S16_LE -r 16000 -c 1 | python inference/streaming.py --model-dir MODEL_DIR -     # microphone (Linux)
+python inference/streaming.py --model-dir MODEL_DIR --simulate speech.wav                     # a file, paced in real time
+```
 
-| Test kümesi | balbal-v1 | Yalnız Whisper-large-v3-turbo | Turbo ile yönlendirilmiş balbal-v1 |
+It prints one JSON line per update (`seconds`, `text`, `final`); the last line is the final result with `words`. Input on
+stdin is raw 16-bit mono 16 kHz PCM. `--runtime torch` uses the PyTorch model instead of ONNX; `--hotwords` works as above.
+
+From Python (either runtime):
+
+```python
+from runtime_onnx import Engine          # or: from transcribe import Transcriber
+from streaming import Stream
+stream = Stream(Engine('MODEL_DIR'), update_seconds=0.6, hotwords=None)
+for piece in audio_pieces:               # mono float32 at 16 kHz, any length
+    update = stream.feed(piece)          # None until update_seconds of new audio arrived
+    if update:
+        print(update['text'])
+print(stream.finish()['text'])
+```
+
+Cost: on 4 CPU threads (ONNX), a 65 s recording fed in 0.25 s pieces (86 updates) took 21.5 s of compute in total, about
+a third of real time.
+
+## Steering
+
+balbal-v1 can be steered toward a sentence from another source (for example the text of a larger ASR system). On every
+refiner pass a small offset is added to the memory reads and optimised for a few Adam steps on CTC(sentence), only on the
+frames where the model is unsure (top probability < 0.9). The weights stay frozen and the offset is thrown away after each
+clip. The model only changes where the audio allows it: acoustically mismatched sentences are mostly rejected, and a sentence
+much shorter than what balbal hears is ignored.
+
+With Whisper-large-v3-turbo text (WER, balbal-normalizer, KenLM):
+
+| Test set | balbal-v1 | Whisper-large-v3-turbo alone | balbal-v1 steered by Turbo |
 |---|---|---|---|
 | FLEURS tr test | 6.53 | 4.11 | **3.97** |
-| Genel geliştirme seti (Türkçe) | 10.03 | 8.36 | **7.20** |
+| General development set (Turkish) | 10.03 | 8.36 | **7.20** |
 | Mu-Bench tr-TR | 11.79 | 20.73 | **11.08** |
 | LibriSpeech test-clean (English) | 22.91 | **3.85** | 4.75 |
 
-- İki modelin de iyi olduğu yerde (FLEURS, genel geliştirme seti) yönlendirme ikisini de geçiyor.
-- balbal-v1'in zayıf olduğu yerde (İngilizce; balbal bir Türkçe modeli) yönlendirme onu yönlendiren modelin seviyesine yaklaştırıyor: 22.91 → 4.75, yalnız Whisper 3.85.
-- Yönlendiren modelin zayıf olduğu yerde (Mu-Bench telefon görüşmeleri; Whisper balbal'ın neredeyse iki katı hata yapıyor) yönlendirme zarar vermiyor: balbal net duyduğunu koruyor. Bu kazanç istatistiksel olarak anlamlı değil (eşleştirilmiş bootstrap %95 aralığı [-1.58, +0.06]).
+- Where both models are good (FLEURS, general development set), steering beats both.
+- Where balbal-v1 is weak (English; balbal is a Turkish model), steering brings it close to the steering model: 22.91 → 4.75,
+  Whisper alone 3.85.
+- Where the steering model is weak (Mu-Bench phone calls; Whisper makes almost twice balbal's errors), steering does not hurt:
+  balbal keeps what it hears clearly. This gain is not statistically significant (paired bootstrap 95% interval
+  [-1.58, +0.06]).
 
-| Mod | Ne için | Ayar (`steering/steer.json`) |
+| Mode | For | Settings (`steering/steer.json`) |
 |---|---|---|
-| `weak` | yanlış olabilecek bir cümle (başka bir ASR, tahmin) | 3 adım, lr 0.03, yalnızca emin olunmayan kareler |
-| `strong` | güvenilir bir kaynaktan gelen cümle | 6 adım, lr 0.03 |
-| `auto` | Whisper-large-v3-turbo'yu kendisi çalıştırır, metnine `weak` ile yönlendirir | `transformers` gerekir; GPU önerilir |
+| `weak` | a sentence that may be wrong (another ASR, a guess) | 3 steps, lr 0.03, unsure frames only |
+| `strong` | a sentence from a trusted source | 6 steps, lr 0.03 |
+| `auto` | runs Whisper-large-v3-turbo itself and steers toward its text with `weak` | needs `transformers`; GPU recommended |
 
-200 ayrı tutulan klipte (yönlendirmesiz 13.16 WER): doğru cümleyle `strong` 1.74'e iner (`weak` 4.04); kelimelerin %15'i yanlış
-bir cümleyle `strong` 8.02, `weak` 7.03 verir. Yönlendirme CPU'da klip başına yaklaşık 0.25 s sürer; Whisper CPU'da klip başına
-onlarca saniye sürer.
+On 200 held-out clips (13.16 WER unsteered): `strong` with the correct sentence goes down to 1.74 (`weak` 4.04); with a
+sentence where 15% of the words are wrong, `strong` gives 8.02 and `weak` 7.03. Steering takes about 0.25 s per clip on CPU;
+Whisper takes tens of seconds per clip on CPU.
 
 ```bash
-python steering/steer_transcribe.py --model-dir MODEL_DIR --mode auto ses.wav          # pip install transformers
-python steering/steer_transcribe.py --model-dir MODEL_DIR --mode weak --text "Yarın saat 15'te toplantı var mı?" ses.wav
-python steering/steer_transcribe.py --model-dir MODEL_DIR --mode strong --text "..." ses.wav
+python steering/steer_transcribe.py --model-dir MODEL_DIR --mode auto speech.wav          # pip install transformers
+python steering/steer_transcribe.py --model-dir MODEL_DIR --mode weak --text "Yarın saat 15'te toplantı var mı?" speech.wav
+python steering/steer_transcribe.py --model-dir MODEL_DIR --mode strong --text "..." speech.wav
 ```
 
-Her çıktı satırı bir JSON: `text` (yönlendirilmiş), `plain_text` (yönlendirmesiz), `target` (rakamları kelimeye çevrilmiş cümle),
-`guarded` (true = cümle reddedildi) ve süreler. Cümlede büyük harf ve noktalamayı koru (normalize edilmiş cümleler ~0.6 WER daha
-kötü yönlendirir). 30 saniyeden uzun ses 30 saniyelik parçalara bölünür.
+Every output line is a JSON object: `text` (steered), `plain_text` (unsteered), `target` (the sentence with digits turned
+into words), `guarded` (true = the sentence was rejected) and timings. Keep casing and punctuation in the sentence
+(normalized sentences steer about 0.6 WER worse). Audio longer than 30 s is cut into 30 s chunks.
 
 ## Normalizer
 
-- `normalizer/turkish.py` — `normalize_turkish()`: küçük harf (Türkçe İ/ı), noktalama, sayılar/semboller/e-posta sözcükleri; v1 puanlama
-  ve dil modelinden tutulan (held-out) cümleleri dışlamak için tam metin anahtarı.
-- `normalizer/metrics_v2.py` — **balbal-normalizer** puanlaması: `turkish.py` normalizasyonu + dolgu sesleri (ee, hı), "ile" kaynaşması, şapka, sıra sayıları, birimler,
-  kesme işareti, bitişik/ayrı yazım farkları, e-postada "at/et", harf-rakam kodları ve **sayıların rakam rakam karşılaştırılması**
-  (`doksan` = `9 0` = `dokuz sıfır`). `corpus_metrics_v2(refs, hyps)` WER/CER döndürür.
-- `normalizer/numbers.py` — `verbalize()`: eğitim etiketlerindeki rakamları kelimeye çevirir (`180'e` → `yüz seksene`);
-  belirsiz biçimlerde `None` döner ve satır atılır. balbal-v1 **yalnızca kelime** etiketleriyle eğitildi, rakam yazmaz.
-- `normalizer/label_clean.py` — gerçek konuşma etiketlerini temizler (sahne notları, kekeleme, sembol/URL, saniyede >25 karakter,
-  5'ten fazla tekrar eden metin).
-- `normalizer/itn.py` — ters normalizasyon: `itn_text('sıfır beş yüz otuz iki')` → `0 532`; `itn_digits()` puanlama için
-  rakam rakam biçim.
+- `normalizer/turkish.py`: `normalize_turkish()`: lowercasing (Turkish İ/ı), punctuation, numbers/symbols/e-mail words; v1
+  scoring and an exact-text key for excluding held-out sentences from the language model.
+- `normalizer/metrics_v2.py`: **balbal-normalizer** scoring: the `turkish.py` normalization + fillers (ee, hı), "ile" fusion,
+  circumflex, ordinals, units, apostrophes, joined/split spelling variants, "at/et" in e-mail addresses, letter-digit codes,
+  and **numbers compared digit by digit** (`doksan` = `9 0` = `dokuz sıfır`). `corpus_metrics_v2(refs, hyps)` returns
+  WER/CER.
+- `normalizer/numbers.py`: `verbalize()`: turns digits in training labels into words (`180'e` → `yüz seksene`); returns
+  `None` for ambiguous forms and the row is dropped. balbal-v1 was trained on **words-only** labels and does not write digits.
+- `normalizer/label_clean.py`: cleans real-speech labels (stage directions, stutters, symbols/URLs, more than 25 characters
+  per second, text repeated more than 5 times).
+- `normalizer/itn.py`: inverse normalization: `itn_text('sıfır beş yüz otuz iki')` → `0 532`; `itn_digits()` gives the
+  digit-by-digit form used in scoring.
 
-## Eğitim
+## Training
 
-balbal-v1, önceki aşamanın ağırlıklarından başlayan bir devam eğitimidir (bu aşama: 9000 güncelleme, yayımlanan = adım 6000
-ham ağırlıkları):
+balbal-v1 is a continued training run that starts from the weights of the previous stage (this stage: 9000 updates;
+the released weights are the raw step-6000 weights):
 
 ```bash
 TEL_P=0.5 EDGE_P=0.5 LOADER_WORKERS=8 python training/train.py runs/balbal-v1 \
-    --init ONCEKI_ASAMA.pt --tokenizer-dir MODEL_DIR/tokenizer \
+    --init PREVIOUS_STAGE.pt --tokenizer-dir MODEL_DIR/tokenizer \
     --train train.jsonl --dev dev.jsonl \
     --updates 9000 --lr 1e-4 --eval-every 3000 --soup 0.5 --micro 16
 ```
 
-- **Veri** (`training/data.py`): JSONL satırları (`audio_path`, `pcm_sha256`, `duration_seconds`, `text`, `source`) veya aynı kaydın
-  ardışık parçalarını anında birleştiren sanal satırlar (`parts`). CTC'ye sığmayan klipler atılır.
-- **Augmentasyon**: telefon bandı (`TEL_P`: 8 kHz, 300 Hz yüksek geçiren, mu-law), kenar biçimi (`EDGE_P`: sessiz kenarları kırp,
-  0–0.6 s dijital sıfır ekle), NeMo SpecAugment.
-- **Hedef**: 0.3 × CTC(kodlayıcı) + 0.7 × ortalama CTC(3 düzeltici geçişi), bf16.
-- **Optimizasyon**: Muon (gizli doğrusal katmanlar, kafa başına) + AdamW (geri kalanı; bellek değer tablosu 5× öğrenme oranı),
-  10 adım ısınma + kosinüs (1 → 0.1), gradyan kırpma 1.0, güncelleme başına 32 klip.
-- **Değerlendirme**: her `--eval-every` adımda `--dev` üzerinde greedy WER (balbal-normalizer; ham ve `--soup` çorbası); en iyi 5 kontrol noktası
-  saklanır. (Orijinal koşu kontrol noktalarını ayrıca KenLM ile iç DEV kümesinde sıraladı; o kısım bu depoda yok.)
-- **Dil modeli**: `training/build_lm.py` — modelin gördüğü tüm eğitim metinleri üzerinde 6-gram token KenLM; held-out metinler tam
-  eşleşmeyle dışlanır.
-- **Kalibrasyon**: `training/calibrate.py` — DEV'de alpha × sıcaklık 3×3 ızgara; varsayılan ayar ancak eşleştirilmiş bootstrap
-  %95 güven aralığı tamamen 0'ın altındaysa değişir (balbal-v1'de değişmedi).
-- **Çorba**: `training/soup.py OUT.pt 0.5:a.pt 0.5:b.pt`.
+- **Data** (`training/data.py`): JSONL rows (`audio_path`, `pcm_sha256`, `duration_seconds`, `text`, `source`), or virtual
+  rows (`parts`) that join consecutive pieces of the same recording on the fly. Clips that do not fit CTC are dropped.
+- **Augmentation**: telephone band (`TEL_P`: 8 kHz, 300 Hz high-pass, mu-law), edge shape (`EDGE_P`: trim silent edges, add
+  0–0.6 s of digital zeros), NeMo SpecAugment.
+- **Objective**: 0.3 × CTC(encoder) + 0.7 × mean CTC(3 refiner passes), bf16.
+- **Optimization**: Muon (hidden linear layers, per head) + AdamW (the rest; memory value table at 5× learning rate), 10-step
+  warm-up + cosine (1 → 0.1), gradient clipping 1.0, 32 clips per update.
+- **Evaluation**: greedy WER (balbal-normalizer) on `--dev` every `--eval-every` steps, raw and as a `--soup` average; the best
+  5 checkpoints are kept. (The original run also ranked checkpoints with KenLM on an internal DEV set; that part is not in
+  this repository.)
+- **Language model**: `training/build_lm.py`: 6-gram token KenLM over all training text the model saw; held-out sentences
+  are excluded by exact match.
+- **Calibration**: `training/calibrate.py`: a 3×3 grid of alpha × temperature on DEV; the default changes only if the paired
+  bootstrap 95% confidence interval is entirely below 0 (it did not change for balbal-v1).
+- **Soup**: `training/soup.py OUT.pt 0.5:a.pt 0.5:b.pt`.
 
-ROCm'da eğitim adımlarında MIOpen kapalıdır (yaklaşık %41 daha hızlı); değerlendirmede açıktır.
+On ROCm, MIOpen is off in training steps (about 41% faster) and on during evaluation.
 
-## Atıf
+## Citation
 
-balbal-v1'i bir çalışmada kullanırsan şöyle atıf verebilirsin:
+If you use balbal-v1 in your work, you can cite it as:
 
 ```bibtex
 @misc{yapagci2026balbal,
@@ -213,49 +255,25 @@ balbal-v1'i bir çalışmada kullanırsan şöyle atıf verebilirsin:
 }
 ```
 
-## Lisans
+## License
 
-Kod [Apache License 2.0](LICENSE) ile lisanslanmıştır (Copyright 2026 Eray Yapağcı). Lisans yalnızca bu depodaki kodu kapsar.
-Model ağırlıkları, tokenizer ve dil modeli ayrı olarak [balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE) ile
-[Hugging Face'te](https://huggingface.co/erayyapagci/balbal-v1) yayımlanmıştır: araştırma ve ticari olmayan kullanım serbest,
-küçük işletmeler kendi işlerinde ticari olarak da kullanabilir; konuşma tanıma ürünü satmak için ticari lisans gerekir. Üçüncü taraf lisansları: `inference/licenses/` (flashlight-text, KenLM).
+The code is licensed under the [Apache License 2.0](LICENSE) (Copyright 2026 Eray Yapağcı). The license covers only the
+code in this repository. The model weights, tokenizer and language model are released separately under the
+[balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE) on
+[Hugging Face](https://huggingface.co/erayyapagci/balbal-v1): free for research and non-commercial use, and for small
+businesses' own commercial use; selling speech recognition products built on them needs a commercial license. Third-party
+licenses: `inference/licenses/` (flashlight-text, KenLM).
 
 ---
 
-## English summary
+## Türkçe özet
 
-Code for **balbal-v1**, a Turkish speech recognizer: Conformer-CTC (16 layers, d_model 176, SentencePiece 1024) with a 2-layer
-refiner run for 3 passes and a product-key acoustic memory (45.4M stored / 15.4M active parameters), decoded with a 6-gram token
-KenLM (flashlight-text, alpha 0.75, beta 1.5, T 1.2, beam 64). Results: FLEURS tr test **6.54 WER** (balbal-normalizer),
-Mu-Bench tr-TR **11.93 WER** (official scoring).
+**balbal-v1** Türkçe konuşma tanıma modelinin kodu: Conformer-CTC (16 katman, d_model 176, SentencePiece 1024), 3 geçişli
+2 katmanlı düzeltici ve ürün-anahtar akustik bellek (45.4M saklanan / 15.4M aktif parametre), 6-gram token KenLM ile çözülür.
+Sonuçlar: FLEURS tr test **6.54 WER** (balbal-normalizer), Mu-Bench tr-TR **11.93 WER** (resmi puanlama).
 
-**Weights** (model, tokenizer, KenLM) are on Hugging Face: [erayyapagci/balbal-v1](https://huggingface.co/erayyapagci/balbal-v1),
-under the [balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE) (free for research and non-commercial use, and for small businesses' own
-commercial use; selling speech products built on it needs a commercial license). The code loads them from a `MODEL_DIR`
-(layout above): `huggingface-cli download erayyapagci/balbal-v1 --local-dir MODEL_DIR`.
-
-- `inference/` — PyTorch/NeMo transcriber (`transcribe.py`), torch-free ONNX CPU runtime (`runtime_onnx.py`), ONNX export
-  (`export_onnx.py`), KenLM beam decoder with a small native extension (`build_native.py`). Optional hotword biasing:
-  `--hotwords "Arslan,Zaynep"` (or `hotwords=[...]` in Python) favours expected names; a per-character bonus
-  (`hotword_bonus` in `configs/decoder.json`) is kept only for completed words. On our development set, given each clip's names
-  plus 10 unrelated ones, name recall rose from 66% to 85%; unrelated names alone cost about +0.2 WER.
-  Every result also carries per-word timestamps, `words: [{"word", "start", "end"}]` in seconds, read from the CTC frames
-  (40 ms) of the best beam path (`word_timing.py`, same method as the balbal Android app's captions; 94.5% of word starts
-  within 100 ms of MMS forced alignment on 100 development clips).
-- `steering/` — steer balbal-v1 toward a sentence from another source (`--mode auto|weak|strong`): a small offset on the
-  acoustic-memory reads, optimised for a few Adam steps on CTC(sentence) on low-confidence frames only; weights stay frozen.
-  With Whisper-large-v3-turbo text (WER, balbal-normalizer): FLEURS tr test 6.53 → 3.97 (Turbo alone 4.11), Mu-Bench
-  tr-TR 11.79 → 11.08 (Turbo alone 20.73; not significant), LibriSpeech test-clean (English) 22.91 → 4.75
-  (Turbo alone 3.85): where balbal is weak, steering brings it close to the steering model. See the Turkish section above for usage.
-- `normalizer/` — Turkish normalization, balbal-normalizer scoring (`corpus_metrics_v2`), digit verbalization for words-only labels, label
-  cleaning, inverse text normalization (number words → digits).
-- `training/` — the training loop of the final balbal-v1 stage (Muon + AdamW, telephone/edge augmentation, 0.3/0.7 base/refiner CTC
-  objective), weight soups, KenLM build, decoder calibration. The original run also ranked checkpoints with KenLM on an internal
-  DEV set; here checkpoint ranking uses greedy WER (balbal-normalizer) on your `--dev`.
-
-Citation: if you use balbal-v1 in your work, please cite it with the BibTeX entry above (also in `CITATION.cff`).
-
-License: the code is under the [Apache License 2.0](LICENSE) (Copyright 2026 Eray Yapağcı). It covers the code in this
-repository only. The weights, tokenizer and language model are released separately under
-the [balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE) on [Hugging Face](https://huggingface.co/erayyapagci/balbal-v1).
-Third-party licenses: `inference/licenses/`.
+Ağırlıklar Hugging Face'te: [erayyapagci/balbal-v1](https://huggingface.co/erayyapagci/balbal-v1)
+([balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE)). `inference/` çıkarım
+(PyTorch ve ONNX), kelime zaman damgaları, kelime önceliği (`--hotwords`) ve canlı yazıya dökme (`streaming.py`) içerir;
+`steering/` yönlendirme, `normalizer/` Türkçe normalizasyon ve puanlama, `training/` eğitim kodudur. Kullanım ayrıntıları
+yukarıdaki İngilizce bölümlerde. Kod Apache 2.0 lisanslıdır.

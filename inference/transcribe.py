@@ -111,6 +111,26 @@ class Transcriber:
         if self.device.startswith('cuda'):
             self.torch.cuda.synchronize()
 
+    def transcribe_chunk(self, wave, offset_seconds=0., hotwords=None):
+        """One chunk (<= 30 s) of a mono 16 kHz waveform -> {'text', 'words', ...}; times are shifted by offset_seconds.
+        Used by transcribe_waveform and streaming.py."""
+        samples = np.asarray(wave, dtype=np.float32).copy()
+        original = len(samples)
+        if len(samples) < 4000:  # the convolutional subsampler needs at least 0.25 s
+            samples = np.pad(samples, (0, 4000 - len(samples)))
+        self._sync(); tick = time.perf_counter()
+        with self.torch.inference_mode():
+            x = self.torch.from_numpy(samples)[None].to(self.device)
+            lengths = self.torch.tensor([len(samples)], device=self.device)
+            log_probs, encoded, *_ = self.model(input_signal=x, input_signal_length=lengths)
+            emissions = log_probs[0, :int(encoded[0])].float().cpu().numpy()
+        self.model.ctc_extra.clear()
+        self._sync(); acoustic = time.perf_counter() - tick
+        tick = time.perf_counter(); out = self.decoder.decode_words(emissions, hotwords, offset_seconds)
+        decoding = time.perf_counter() - tick
+        return dict(start_seconds=offset_seconds, end_seconds=offset_seconds + original / 16000, text=out['text'],
+                    words=out['words'], acoustic_seconds=acoustic, decoder_seconds=decoding)
+
     def transcribe_waveform(self, wave, *, chunk_seconds=30., hotwords=None):
         """Mono float32 waveform at 16 kHz. Audio longer than 30 s is cut into fixed 30 s chunks (no VAD).
         hotwords: optional names/words to favour (see decoder.KenLMDecoder.decode)."""
@@ -118,25 +138,8 @@ class Transcriber:
         if wave.ndim != 1 or not wave.size or not np.isfinite(wave).all():
             raise ValueError('Expected a nonempty, finite mono 16 kHz waveform')
         step = int(chunk_seconds * 16000)
-        segments = []
-        for start in range(0, len(wave), step):
-            samples = wave[start:start + step].copy()
-            original = len(samples)
-            if len(samples) < 4000:  # the convolutional subsampler needs at least 0.25 s
-                samples = np.pad(samples, (0, 4000 - len(samples)))
-            self._sync(); tick = time.perf_counter()
-            with self.torch.inference_mode():
-                x = self.torch.from_numpy(samples)[None].to(self.device)
-                lengths = self.torch.tensor([len(samples)], device=self.device)
-                log_probs, encoded, *_ = self.model(input_signal=x, input_signal_length=lengths)
-                emissions = log_probs[0, :int(encoded[0])].float().cpu().numpy()
-            self.model.ctc_extra.clear()
-            self._sync(); acoustic = time.perf_counter() - tick
-            tick = time.perf_counter(); out = self.decoder.decode_words(emissions, hotwords, start / 16000)
-            decoding = time.perf_counter() - tick
-            segments.append(dict(start_seconds=start / 16000, end_seconds=(start + original) / 16000, text=out['text'],
-                                 words=out['words'],
-                                 acoustic_seconds=acoustic, decoder_seconds=decoding))
+        segments = [self.transcribe_chunk(wave[start:start + step], start / 16000, hotwords)
+                    for start in range(0, len(wave), step)]
         elapsed = sum(s['acoustic_seconds'] + s['decoder_seconds'] for s in segments)
         return dict(text=' '.join(s['text'] for s in segments if s['text']), words=[w for s in segments for w in s['words']],
                     duration_seconds=len(wave) / 16000,

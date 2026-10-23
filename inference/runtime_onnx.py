@@ -8,6 +8,7 @@ and lm/{model.binary, tokenizer.model}. CPU arena, memory patterns and weight pr
   from runtime_onnx import Engine; Engine(MODEL_DIR).transcribe(wave)['text']   # mono float32, 16 kHz
 The result also has 'words': [{'word', 'start', 'end'}] with times in seconds (see word_timing.py).
 Audio longer than 30 s is cut into fixed 30 s chunks (no VAD), as in transcribe.py.
+Live transcription of a growing recording: streaming.py.
 """
 import argparse
 import json
@@ -36,7 +37,8 @@ class Engine:
         self.decoder = KenLMDecoder(model_dir / 'lm')
         self.transcribe(np.zeros(16000, dtype=np.float32))   # warm-up
 
-    def _chunk(self, wave, hotwords=None, offset_seconds=0.):
+    def transcribe_chunk(self, wave, offset_seconds=0., hotwords=None):
+        """One chunk (<= 30 s) -> {'text', 'words'}; word times are shifted by offset_seconds. Used by streaming.py."""
         if len(wave) < 4000:   # the convolutional subsampler needs at least 0.25 s
             wave = np.pad(wave, (0, 4000 - len(wave)))
         a = self.session.run(None, {'audio': np.ascontiguousarray(wave, dtype=np.float32)[None]})[0]
@@ -45,7 +47,7 @@ class Engine:
     def transcribe(self, wave, chunk_seconds=30., hotwords=None):
         wave = np.asarray(wave, dtype=np.float32)
         start = time.perf_counter(); step = int(chunk_seconds * 16000)
-        chunks = [self._chunk(wave[i:i + step], hotwords, i / 16000) for i in range(0, len(wave), step)]
+        chunks = [self.transcribe_chunk(wave[i:i + step], i / 16000, hotwords) for i in range(0, len(wave), step)]
         elapsed = time.perf_counter() - start
         return {'text': ' '.join(c['text'] for c in chunks if c['text']), 'words': [w for c in chunks for w in c['words']],
                 'duration_seconds': len(wave) / 16000,
