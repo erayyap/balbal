@@ -1,0 +1,22 @@
+{
+  "config": {
+    "acoustic_width": 176,
+    "width": 192,
+    "vocabulary": 1024,
+    "layers": 2,
+    "heads": 4,
+    "dropout": 0.1,
+    "loops": 3
+  },
+  "memory": {
+    "subkeys": 500,
+    "key_dim": 64,
+    "value_dim": 120,
+    "context_frames": 3,
+    "heads": 4,
+    "top_k": 16,
+    "temperature": 0.1,
+    "dropout": 0.1
+  },
+  "inference_loops": 3
+}

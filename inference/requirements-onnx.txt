@@ -1,0 +1,8 @@
+# CPU runtime without torch/NeMo (runtime_onnx.py). Build the decoder with build_native.py afterwards.
+numpy==2.2.6
+scipy==1.18.0
+soundfile==0.14.0
+sentencepiece==0.2.2
+onnxruntime==1.30.0
+flashlight-text==0.0.7
+pybind11==2.10.4

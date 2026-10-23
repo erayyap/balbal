@@ -1,0 +1,6 @@
+# Training uses the pinned inference environment (torch 2.10.0 + NeMo 2.5.0, installed with --no-deps):
+#   pip install torch==2.10.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu128   (or a ROCm build)
+#   pip install --no-deps -r inference/requirements-runtime.txt
+# It already pins transformers (EpochLengthSampler), kenlm (LM parity probe), scipy, soundfile, jiwer, sentencepiece.
+# build_lm.py also needs KenLM's lmplz/build_binary binaries (https://github.com/kpu/kenlm), on PATH or in KENLM_BIN.
+-r ../inference/requirements-runtime.txt

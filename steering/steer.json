@@ -1,0 +1,21 @@
+{
+  "weak": {
+    "steps": 3,
+    "lr": 0.03,
+    "gate": 0.9,
+    "guard": 0.5,
+    "note": "for sentences that may be wrong (another ASR system's output, a guess): only low-confidence frames move"
+  },
+  "strong": {
+    "steps": 6,
+    "lr": 0.03,
+    "gate": 0.9,
+    "guard": 0.25,
+    "note": "for sentences from a trusted source: more steps, follows the sentence more closely"
+  },
+  "auto": {
+    "teacher": "openai/whisper-large-v3-turbo",
+    "config": "weak",
+    "beam": 5
+  }
+}
