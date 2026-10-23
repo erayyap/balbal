@@ -132,11 +132,14 @@ class Transcriber:
                 emissions = log_probs[0, :int(encoded[0])].float().cpu().numpy()
             self.model.ctc_extra.clear()
             self._sync(); acoustic = time.perf_counter() - tick
-            tick = time.perf_counter(); text = self.decoder.decode(emissions, hotwords); decoding = time.perf_counter() - tick
-            segments.append(dict(start_seconds=start / 16000, end_seconds=(start + original) / 16000, text=text,
+            tick = time.perf_counter(); out = self.decoder.decode_words(emissions, hotwords, start / 16000)
+            decoding = time.perf_counter() - tick
+            segments.append(dict(start_seconds=start / 16000, end_seconds=(start + original) / 16000, text=out['text'],
+                                 words=out['words'],
                                  acoustic_seconds=acoustic, decoder_seconds=decoding))
         elapsed = sum(s['acoustic_seconds'] + s['decoder_seconds'] for s in segments)
-        return dict(text=' '.join(s['text'] for s in segments if s['text']), duration_seconds=len(wave) / 16000,
+        return dict(text=' '.join(s['text'] for s in segments if s['text']), words=[w for s in segments for w in s['words']],
+                    duration_seconds=len(wave) / 16000,
                     device=self.device, segments=segments, inference_seconds=elapsed,
                     realtime_speed=(len(wave) / 16000 / elapsed) if elapsed else None)
 

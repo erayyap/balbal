@@ -6,7 +6,6 @@ Optional hotwords (names/words expected in the audio) get a per-character bonus 
 The LM files (model.binary + tokenizer.model) are not part of this repository; pass their directory as `lm_dir`.
 """
 from __future__ import annotations
-import itertools
 import json
 from pathlib import Path
 import sys
@@ -15,6 +14,8 @@ import numpy as np
 import sentencepiece as spm
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
+from word_timing import token_spans, words_from_spans
 CONFIGS = ROOT.parent / 'configs'
 
 
@@ -87,7 +88,12 @@ class KenLMDecoder:
         return [list(q) for q in seqs], bonuses
 
     def decode(self, log_probs, hotwords=None):
-        """Return the best transcript for one utterance's [frames, 1025] log-probabilities.
+        """Return the best transcript for one utterance's [frames, 1025] log-probabilities (see decode_words)."""
+        return self.decode_words(log_probs, hotwords)['text']
+
+    def decode_words(self, log_probs, hotwords=None, offset_seconds=0.):
+        """Best transcript plus per-word timestamps: {'text', 'words': [{'word', 'start', 'end'}]} (seconds, shifted
+        by offset_seconds; see word_timing.py).
 
         hotwords: optional list of words/names expected in the audio (e.g. ['Arslan', 'Zaynep']). Tokens that extend a
         hotword earn `hotword_bonus` (configs/decoder.json) per character; the bonus is taken back if the word is not
@@ -106,5 +112,5 @@ class KenLMDecoder:
         if not hypotheses:
             raise RuntimeError('Beam search returned no hypothesis')
         # Collapse adjacent repeats before removing blanks: a blank separates repeated tokens.
-        ids = [int(t) for t, _ in itertools.groupby(hypotheses[0].tokens) if 0 <= t < self.vocab_size]
-        return self.sp.decode(ids)
+        spans = token_spans(hypotheses[0].tokens, self.vocab_size)
+        return dict(text=self.sp.decode([t for t, _, _ in spans]), words=words_from_spans(spans, self.sp, offset_seconds))

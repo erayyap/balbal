@@ -109,6 +109,11 @@ Python içinden: `asr.transcribe('ses.wav', hotwords=['Arslan', 'Zaynep'])`. Kel
 setinde seçildi: her klibin isimleri ve 10 alakasız isim verildiğinde isimlerin doğru yazılma oranı %66'dan %85'e çıktı;
 yalnızca alakasız isimler verildiğinde WER yaklaşık 0.2 puan arttı.
 
+**Kelime zaman damgaları:** her sonuçta bir `words` alanı da vardır: `[{"word": "Yani", "start": 0.0, "end": 0.28}, ...]` (saniye;
+30 saniyelik parçalar kendi başlangıç zamanıyla kaydırılır). Zamanlar beam search'ün en iyi yolundaki CTC karelerinden (40 ms)
+gelir; balbal Android uygulamasının altyazılarıyla aynı yöntem (`inference/word_timing.py`). 100 geliştirme klibinde MMS zorlamalı
+hizalamasına göre kelime başlangıçlarının %94.5'i 100 ms içinde. Python içinden: `asr.transcribe('ses.wav')['words']`.
+
 ## Yönlendirme (steering)
 
 balbal-v1, başka bir kaynaktan gelen bir cümleye doğru yönlendirilebilir (ör. daha büyük bir ASR sisteminin metni). Her düzeltici
@@ -234,6 +239,9 @@ commercial use; selling speech products built on it needs a commercial license).
   `--hotwords "Arslan,Zaynep"` (or `hotwords=[...]` in Python) favours expected names; a per-character bonus
   (`hotword_bonus` in `configs/decoder.json`) is kept only for completed words. On our development set, given each clip's names
   plus 10 unrelated ones, name recall rose from 66% to 85%; unrelated names alone cost about +0.2 WER.
+  Every result also carries per-word timestamps, `words: [{"word", "start", "end"}]` in seconds, read from the CTC frames
+  (40 ms) of the best beam path (`word_timing.py`, same method as the balbal Android app's captions; 94.5% of word starts
+  within 100 ms of MMS forced alignment on 100 development clips).
 - `steering/` — steer balbal-v1 toward a sentence from another source (`--mode auto|weak|strong`): a small offset on the
   acoustic-memory reads, optimised for a few Adam steps on CTC(sentence) on low-confidence frames only; weights stay frozen.
   With Whisper-large-v3-turbo text (WER, balbal-normalizer): FLEURS tr test 6.53 → 3.97 (Turbo alone 4.11), Mu-Bench
