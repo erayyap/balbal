@@ -95,6 +95,17 @@ _DECIMAL_RE = re.compile(r"(?<![\d.,])(\d+)(?:,(\d{1,2})|\.(\d))(?![\d])(?![.,]\
 _EMAIL_WORD_RE = re.compile(r"(?<!\w)e[- ]?(mail|posta)")
 
 
+class _PunctSymbolToSpace(dict):
+    """str.translate table: punctuation (P*) and symbol (S*) characters -> space, others unchanged; filled lazily."""
+
+    def __missing__(self, code: int):
+        self[code] = value = " " if unicodedata.category(chr(code))[0] in "PS" else code
+        return value
+
+
+PUNCT_SYMBOL_TO_SPACE = _PunctSymbolToSpace()
+
+
 def spoken_symbols(text: str) -> str:
     for pattern, replacement in _SPOKEN_SYMBOLS:
         text = pattern.sub(replacement, text)
@@ -130,14 +141,7 @@ def normalize_turkish(text: object) -> str:
     value = _THOUSANDS_GROUP_RE.sub(lambda match: re.sub(r"[.,]", "", match.group()), value)
     value = _DECIMAL_RE.sub(lambda m: f"{m.group(1)} virgül {m.group(2) or m.group(3)}", value)
     value = _DIGIT_RUN_RE.sub(lambda match: turkish_number_words(match.group()), value)
-    normalized: list[str] = []
-    for character in value:
-        category = unicodedata.category(character)
-        if category.startswith("P") or category.startswith("S"):
-            normalized.append(" ")
-        else:
-            normalized.append(character)
-    return _WHITESPACE_RE.sub(" ", "".join(normalized)).strip()
+    return _WHITESPACE_RE.sub(" ", value.translate(PUNCT_SYMBOL_TO_SPACE)).strip()
 
 
 def normalized_corpus_metrics(references, hypotheses) -> dict[str, float]:

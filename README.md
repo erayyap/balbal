@@ -85,8 +85,8 @@ pip install -r inference/requirements-onnx.txt && python inference/build_native.
 python inference/runtime_onnx.py --model-dir MODEL_DIR speech.wav                  # threads via ASR_THREADS
 ```
 
-`export_onnx.py` rewrites the mel front end as a DFT convolution and the refiner attention and memory reads as
-shape-independent ops; it measures the difference to the NeMo model on the clips you give it (`export.json`) and moves the
+`export_onnx.py` rewrites the mel front end as a DFT convolution, the refiner attention and memory reads as shape-independent
+ops, and the encoder self-attention and subsampling masks as additive biases and broadcasts (fewer single-threaded ops); it measures the difference to the NeMo model on the clips you give it (`export.json`) and moves the
 weights to a separate 64 KiB-aligned file (onnxruntime memory-maps it).
 
 Decoder self-test (synthetic input): `python inference/self_test.py --model-dir MODEL_DIR`.
@@ -149,7 +149,7 @@ print(stream.finish()['text'])
 ```
 
 Cost: on 4 CPU threads (ONNX), a 65 s recording fed in 0.25 s pieces (86 updates) took 21.5 s of compute in total, about
-a third of real time.
+a third of real time (measured before the encoder export rewrite; now lower).
 
 ## Steering
 
@@ -225,11 +225,11 @@ TEL_P=0.5 EDGE_P=0.5 LOADER_WORKERS=8 python training/train.py runs/balbal-v1 \
 - **Data** (`training/data.py`): JSONL rows (`audio_path`, `pcm_sha256`, `duration_seconds`, `text`, `source`), or virtual
   rows (`parts`) that join consecutive pieces of the same recording on the fly. Clips that do not fit CTC are dropped.
 - **Augmentation**: telephone band (`TEL_P`: 8 kHz, 300 Hz high-pass, mu-law), edge shape (`EDGE_P`: trim silent edges, add
-  0–0.6 s of digital zeros), NeMo SpecAugment.
+  0–0.6 s of digital zeros; draws seeded from `--seed`, epoch and row, so runs are reproducible), NeMo SpecAugment.
 - **Objective**: 0.3 × CTC(encoder) + 0.7 × mean CTC(3 refiner passes), bf16.
 - **Optimization**: Muon (hidden linear layers, per head) + AdamW (the rest; memory value table at 5× learning rate), 10-step
   warm-up + cosine (1 → 0.1), gradient clipping 1.0, 32 clips per update.
-- **Evaluation**: greedy WER (balbal-normalizer) on `--dev` every `--eval-every` steps, raw and as a `--soup` average; the best
+- **Evaluation**: greedy WER and CER (balbal-normalizer) on `--dev` every `--eval-every` steps, raw and as a `--soup` average; the best
   5 checkpoints are kept. (The original run also ranked checkpoints with KenLM on an internal DEV set; that part is not in
   this repository.)
 - **Language model**: `training/build_lm.py`: 6-gram token KenLM over all training text the model saw; held-out sentences

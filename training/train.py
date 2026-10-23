@@ -7,16 +7,16 @@ balbal-v1 was trained as
 and the released weights are the raw step-6000 checkpoint (checkpoints/step6000.pt).
 
 - Updates of 32 clips (micro clips per forward/backward), sampled by EpochLengthSampler: length-matched 32-clip batches,
-  batch order shuffled per epoch (seed + epoch). CTC-infeasible rows (label tokens + repeats > 25 frames/s - 2) are
-  dropped up front.
+  batch order shuffled per epoch (seed + epoch), waveform augmentation drawn per (seed, epoch, row). CTC-infeasible
+  rows (label tokens + repeats > 25 frames/s - 2) are dropped up front.
 - Optimizer: Muon (hidden linear maps, per head / per split, momentum .95, scale .2*sqrt(max(h, w))) + AdamW
   (everything else, betas .9/.98, weight decay .001; memory value table at 5x LR, no decay), guarded against
   nonfinite/oversized updates. LR: 10-step linear warmup, cosine from 1 to 0.1 over --updates. Gradient clip 1.0.
 - Fast path on (byte-exact), cuDNN/MIOpen off during training steps on ROCm (it is ~41 % slower there) and on in evals.
-- Every --eval-every updates (and at the end): greedy WER (balbal-normalizer scoring) on --dev, overall and per `source`; for each
-  --soup share w also the weight soup w*current + (1-w)*init. The 5 best raw checkpoints by the best dev WER among raw
-  and soups are kept in OUT/checkpoints (index: best.json). The original run additionally ranked checkpoints with the
-  deployed KenLM decoder on its internal DEV set; that ranking is not part of this release.
+- Every --eval-every updates (and at the end): greedy WER and CER (balbal-normalizer scoring) on --dev, overall and per
+  `source`; for each --soup share w also the weight soup w*current + (1-w)*init. The 5 best raw checkpoints by the best
+  dev WER among raw and soups are kept in OUT/checkpoints (index: best.json). The original run additionally ranked
+  checkpoints with the deployed KenLM decoder on its internal DEV set; that ranking is not part of this release.
 - Logs: OUT/metrics.jsonl (+ stdout), a PROGRESS line (step, loss, updates/s, ETA) every 100 updates.
 """
 import argparse
@@ -45,6 +45,7 @@ def main():
     p.add_argument('--soup', default='0.5', help='comma list of trained-weight shares w scored at each eval')
     p.add_argument('--tf32', action='store_true'); p.add_argument('--no-save', action='store_true')
     args = p.parse_args()
+    if args.micro < 1 or 32 % args.micro: p.error('--micro must divide the 32-clip update')
     out = args.out; out.mkdir(parents=True, exist_ok=False)
 
     import numpy as np, torch
@@ -69,7 +70,7 @@ def main():
     fastpath.install(model)
     H, micro = args.updates, args.micro
     optimizer = fastpath.HybridAdamWMuon(model, lr=args.lr, memory_lr=float(f'{5*args.lr:.10g}'))
-    shape = lambda s: .1+.9*(1+math.cos(math.pi*min(1., max(0., (s-10)/(H-10)))))/2
+    shape = lambda s: .1+.9*(1+math.cos(math.pi*min(1., max(0., (s-10)/max(1, H-10)))))/2
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda s: min(1., (s+1)/10) * shape(s))
     soups = [float(w) for w in args.soup.split(',') if w]
     init_state = {k: v.detach().clone() for k, v in model.state_dict().items()} if soups else None
@@ -97,9 +98,10 @@ def main():
         if not dev: return {}
         hyps = greedy(dev); groups = defaultdict(list)
         for r, h in zip(dev, hyps): groups[r.get('source', 'dev')].append((r['text'], h))
-        wer = lambda items: 100 * corpus_metrics_v2([a for a, _ in items], [b for _, b in items])['wer']
-        return dict(dev_v2=wer([(r['text'], h) for r, h in zip(dev, hyps)]),
-                    dev_by_source_v2={g: wer(items) for g, items in groups.items()})
+        score = lambda items: corpus_metrics_v2([a for a, _ in items], [b for _, b in items])
+        m, by = score([(r['text'], h) for r, h in zip(dev, hyps)]), {g: score(items) for g, items in groups.items()}
+        return dict(dev_v2=100*m['wer'], dev_by_source_v2={g: 100*x['wer'] for g, x in by.items()},
+                    dev_cer_v2=100*m['cer'], dev_cer_by_source_v2={g: 100*x['cer'] for g, x in by.items()})
 
     best = []   # best-5 checkpoints by dev WER (best of raw and soups)
     def keep_best(step, state, scores):
@@ -133,8 +135,9 @@ def main():
     while step < stop_at:
         t0 = time.monotonic()   # loader start-up counts as training time
         epoch = step // epoch_steps; sampler.set_epoch(epoch); indices = list(sampler)[(step % epoch_steps)*32:]
-        loader = DataLoader(D.Rows(train, labels), batch_size=micro, sampler=indices, collate_fn=D.collate,
-                            num_workers=int(os.getenv('LOADER_WORKERS', 4)), prefetch_factor=4,
+        workers = int(os.getenv('LOADER_WORKERS', 4))
+        loader = DataLoader(D.Rows(train, labels, seed=(args.seed % 2**64, epoch)), batch_size=micro, sampler=indices,
+                            collate_fn=D.collate, num_workers=workers, prefetch_factor=4 if workers else None,
                             generator=torch.Generator().manual_seed(args.seed + epoch))
         count, pending = 0, []
         for batch in loader:

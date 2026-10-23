@@ -45,7 +45,7 @@ import unicodedata
 from pathlib import Path
 
 from normalizer.turkish import (_DECIMAL_RE, _DIGIT_RUN_RE, _EMAIL_WORD_RE, _THOUSANDS_GROUP_RE, _WHITESPACE_RE,
-                         spell_letters, spoken_symbols, turkish_lower, turkish_number_words)
+                         PUNCT_SYMBOL_TO_SPACE, spell_letters, spoken_symbols, turkish_lower, turkish_number_words)
 
 ALL_FIXES = ('tags', 'fillers', 'ile', 'circumflex', 'ordinals', 'units', 'apostrophe', 'compound', 'email_at', 'codes', 'digits')
 _LONE_E_RE = re.compile(r"(?<![\w'’])[Ee](?![\w'’])")
@@ -98,6 +98,7 @@ _CODE_TOKEN_RE = re.compile(r"(?<![\w'’])[^\W_]+(?![\w])")
 
 def _spell_code(match):
     token = match.group()
+    if token.isalpha() or token.isdigit(): return token   # fast path: letters and digits are disjoint
     if not (any(c.isdigit() for c in token) and any(c.isalpha() for c in token)): return token
     if token[0].isdigit() and not all(c.isupper() for c in token if c.isalpha()): return token   # 3te, 100m: suffix/unit
     parts = []
@@ -117,6 +118,9 @@ _NUM_SCALE = {'bin': 10**3, 'milyon': 10**6, 'milyar': 10**9}
 _NUM_WORDS = set(_NUM_UNIT) | set(_NUM_TENS) | set(_NUM_SCALE) | {'sıfır', 'yüz'}
 _NUM_AMBIGUOUS = {'bir', 'on', 'yüz', 'altı', 'bin', 'yedi'}   # also: a / ten / face / its bottom / get on / ate
 _SUFFIX_AFTER_RE = re.compile(r"[^\W\d_]|['’`´ʼ][^\W\d_]")   # 3te, 3'te, 1990'larda: suffixed number, read as words
+# Longest number word that is a proper prefix (alternatives longest first; equal-length prefixes of a word are equal).
+_NUM_PREFIX_RE = re.compile('(?:' + '|'.join(sorted(_NUM_WORDS, key=len, reverse=True)) + ')(?=.)', re.S)
+_ILE_TAIL_RE = re.compile(r'(.+?)(y?l[ae])')
 
 
 def _parse_numbers(words):
@@ -130,7 +134,7 @@ def _parse_numbers(words):
     for w in words:
         if w.isdigit():
             close()
-            if w.startswith('0') or len(w) > 3: out.append(w)
+            if w.startswith('0') or len(w) > 3 or not w.isdecimal(): out.append(w)   # '²', '①': int() rejects them; passed through and dropped by _digit_split, as before for '0²'
             else: low, place = int(w), 1
         elif w == 'sıfır': close(); out.append('0')
         elif w in _NUM_UNIT:
@@ -157,9 +161,8 @@ def _digit_split(digits):
 
 def _number_prefix(word):
     """Longest number word that word starts with, and the rest (binine -> bin, ine)."""
-    for n in sorted((n for n in _NUM_WORDS if word.startswith(n) and len(word) > len(n)), key=len, reverse=True):
-        return n, word[len(n):]
-    return None
+    m = _NUM_PREFIX_RE.match(word)
+    return (m.group(), word[m.end():]) if m else None
 
 
 def _continues(words, word):
@@ -176,7 +179,7 @@ def _digits_tokens(words):
     unpacked = []
     for w in words:
         prev = unpacked[-1] if unpacked else None
-        m = re.fullmatch(r'(.+?)(y?l[ae])', w)
+        m = _ILE_TAIL_RE.fullmatch(w)
         if (m and m.group(1) in _NUM_WORDS and _fuse_ile(m.group(1)) == w
                 and (m.group(1) not in _NUM_AMBIGUOUS or (prev and numeric(prev)))):
             unpacked += [m.group(1), 'ile']   # 'ile' fusion undone after a number (beşle = beş ile; the digit side keeps '5 ile')
@@ -248,7 +251,7 @@ def normalize_v2(text, *, reference, fixes=ALL_FIXES):
     value = _DIGIT_RUN_RE.sub(lambda m: f' {m.group()} ' if 'digits' in fixes and not _SUFFIX_AFTER_RE.match(m.string, m.end())
                               else turkish_number_words(m.group()), value)   # digits fix: unsuffixed numbers stay digits
     if 'apostrophe' in fixes: value = _APOSTROPHE_RE.sub('', value)
-    value = ''.join(' ' if unicodedata.category(c)[0] in 'PS' else c for c in value)
+    value = value.translate(PUNCT_SYMBOL_TO_SPACE)
     words = _WHITESPACE_RE.sub(' ', value).strip().split()
     if 'ile' in fixes:
         out = []

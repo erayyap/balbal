@@ -6,10 +6,12 @@ Switch rule: the best grid point replaces the deployed settings only if its WER 
 bootstrap 95% CI (2000 resamples, seed 20261009) entirely below 0 and its CER is no worse. For balbal-v1 the
 deployed settings were kept. Never calibrate on TEST.
   python training/calibrate.py --model-dir MODEL_DIR --dev dev.jsonl --out OUT_DIR [--device cuda] [--workers 8]
-DEV rows: {"audio_path", "text", "source"} (clips <= 30 s). Writes OUT_DIR/check.json and OUT_DIR/dev-predictions.json.
+DEV rows: {"audio_path", "text", "source"} (clips <= 30 s). Writes OUT_DIR/check.json and OUT_DIR/dev-predictions.json;
+log-probs are cached in OUT_DIR/logprobs/KEY (KEY: model weights, configs and code, device, DEV audio files).
 """
 import argparse
 from concurrent.futures import ProcessPoolExecutor
+import hashlib
 import itertools
 import json
 import multiprocessing as mp
@@ -32,6 +34,18 @@ def _decode(task):
     return [_DECODER[key].decode(np.load(p)) for p in paths]
 
 
+def paired_bootstrap(refs, hyps_a, hyps_b, resamples=2000, seed=20261009):
+    """95% CI of WER(a) - WER(b) in points over clip resamples; each side keeps its own (pairwise) reference word count."""
+    import numpy as np
+    from normalizer.metrics_v2 import corpus_metrics_v2
+    counts = lambda hyps: np.array([[m['word_errors'], m['reference_words']] for m in
+                                    (corpus_metrics_v2([x], [h]) for x, h in zip(refs, hyps))], float).T
+    (ea, na), (eb, nb) = counts(hyps_a), counts(hyps_b)
+    idx = np.random.default_rng(seed).integers(0, len(refs), (resamples, len(refs)))
+    diff = 100*(ea[idx].sum(1)/na[idx].sum(1) - eb[idx].sum(1)/nb[idx].sum(1))
+    return np.percentile(diff, [2.5, 97.5])
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--model-dir', type=Path, required=True); p.add_argument('--dev', type=Path, required=True)
@@ -42,9 +56,16 @@ def main():
     import torch
     from transcribe import build_model, read_audio
     from normalizer.metrics_v2 import corpus_metrics_v2
-    out = args.out; out.mkdir(parents=True, exist_ok=True); cache = out / 'logprobs'; cache.mkdir(exist_ok=True)
     dev = [json.loads(l) for l in open(args.dev)]
     dev = [r for r in dev if r['text'].strip()]
+    # Log-prob cache keyed by the model (weights, configs, model + loader code), the device and the DEV audio files (path, size,
+    # mtime): never reuse another model's log-probs.
+    stat = lambda p: (str(Path(p).resolve()), os.stat(p).st_size, os.stat(p).st_mtime_ns)
+    key = hashlib.sha256(json.dumps([args.device, [stat(r['audio_path']) for r in dev]]).encode())
+    for f in [args.model_dir / 'conformer.pt', ROOT / 'configs/model_config.yaml', ROOT / 'configs/refiner.json',
+              ROOT / 'inference/transcribe.py', *sorted((ROOT / 'balbal_model').glob('*.py'))]:
+        with open(f, 'rb') as h: key.update(hashlib.file_digest(h, 'sha256').digest())
+    out = args.out; cache = out / 'logprobs' / key.hexdigest()[:16]; cache.mkdir(parents=True, exist_ok=True)
     model = build_model(args.model_dir).to(args.device).float().eval()
     paths = []
     with torch.inference_mode():
@@ -69,12 +90,8 @@ def main():
             results.append(dict(config=c, wer=100*m['wer'], cer=100*m['cer'], hypotheses=hyps))
             print(json.dumps(dict(alpha=c['alpha'], temperature=c['temperature'], wer=round(100*m['wer'], 3),
                                   cer=round(100*m['cer'], 3))), flush=True)
-    per_clip = lambda r: np.array([corpus_metrics_v2([x], [h])['word_errors'] for x, h in zip(refs, r['hypotheses'])], float)
-    nw = np.array([corpus_metrics_v2([x], [x])['reference_words'] for x in refs], float)
     ref = next(r for r in results if r['config'] == deployed); best = min(results, key=lambda r: (r['wer'], r['cer']))
-    eb, er = per_clip(best), per_clip(ref); rng = np.random.default_rng(20261009)
-    idx = rng.integers(0, len(dev), (2000, len(dev)))
-    diff = 100*(eb[idx].sum(1) - er[idx].sum(1))/nw[idx].sum(1); lo, hi = np.percentile(diff, [2.5, 97.5])
+    lo, hi = paired_bootstrap(refs, best['hypotheses'], ref['hypotheses'])
     switch = best is not ref and hi < 0 and best['cer'] <= ref['cer']
     chosen = best if switch else ref
     grid = [dict(alpha=r['config']['alpha'], temperature=r['config']['temperature'], wer=round(r['wer'], 3), cer=round(r['cer'], 3)) for r in results]
