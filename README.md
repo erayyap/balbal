@@ -1,279 +1,218 @@
-# balbal-v1: Turkish speech recognition (code)
+# balbal
 
-This repository holds the inference, text normalization and training code of **balbal-v1**, a small Turkish speech
-recognition model.
+Turkish speech recognition: model, CPU inference (offline and streaming) and training code.
 
-> **Weights are on Hugging Face:** [erayyapagci/balbal-v1](https://huggingface.co/erayyapagci/balbal-v1) (model, tokenizer,
-> KenLM), under the [balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE): free for
-> research and non-commercial use, and for small businesses' own commercial use; selling speech recognition products built on
-> it needs a commercial license. The code loads the weights from a folder (`MODEL_DIR`).
+| Model | Size | Encoder | Tokenizer | Languages |
+|---|---|---|---|---|
+| **balbal-v2** (default) | 45.4M parameters (30.0M of them a product-key memory table) | Conformer-CTC, 16 layers, d_model 176, 4x subsampling | SentencePiece 1024 | Turkish |
+| **balbal-v2-manas** (large) | 313.3M parameters (192.0M of them a product-key memory table) | FastConformer-CTC, 18 layers, d_model 512, 4x subsampling | SentencePiece 2048 | Turkish, English |
 
-## Architecture
+Both models add a 3-pass loop refiner with a product-key acoustic memory on top of the CTC encoder and decode with a 6-gram token
+KenLM beam search. Output: cased, punctuated text with per-word timestamps.
 
-| Part | Details |
-|---|---|
-| Acoustic model | Conformer-CTC (NeMo `EncDecCTCModelBPE`), 16 layers, d_model 176, 80 mel, 4x subsampling (40 ms frames) |
-| Loop refiner | 2-layer Transformer refiner on top of the encoder output, run for **3 passes** (each pass takes the previous CTC distribution as input) |
-| Acoustic memory | Product-key memory: 500×500 sub-keys, 4 heads, top-16, value size 120, 3-frame context |
-| Vocabulary | SentencePiece 1024 pieces + CTC blank (1025 classes) |
-| Language model | 6-gram **token** KenLM (over SentencePiece pieces) |
-| Decoder | flashlight-text lexicon-free beam search: alpha 0.75, beta 1.5, temperature 1.2, beam 64, top-12 tokens, threshold 8 |
-| Parameters | **45.4M stored / 15.4M active** (most of the memory table is not read on any given frame) |
+**Weights: coming soon on Hugging Face.** This repository holds the code only. The previous model's code is in [`balbal-v1/`](balbal-v1/).
 
-Long audio is cut into fixed 30 s chunks (no VAD); each chunk is decoded on its own.
-
-## Results
-
-| Evaluation | WER |
-|---|---|
-| FLEURS tr (test), balbal-normalizer, KenLM | **6.54** |
-| Mu-Bench tr-TR, official scoring | **11.93** |
-
-balbal-normalizer: `normalizer/metrics_v2.py` (see below).
-
-## Repository layout
+## Contents
 
 ```
-steering/       steering: push the memory reads toward a given sentence (auto / weak / strong)
-balbal_model/   model definition: loop CTC refiner + acoustic memory (attached to the NeMo Conformer)
-configs/        model_config.yaml (NeMo), refiner.json (refiner/memory), decoder.json (decoder settings)
-inference/      PyTorch/NeMo inference, ONNX CPU runtime, live streaming, KenLM decoder, ONNX export
-normalizer/     Turkish normalization, balbal-normalizer scoring, digits→words (training labels), ITN (words→digits)
-training/       training loop, Muon+AdamW, data/augmentation, weight soups, KenLM build, calibration
+balbal/              shared Python package: model definitions, model builder, audio reading, text normalizer and scorer
+configs/             balbal-v2/ and balbal-v2-manas/: NeMo model config, refiner + memory config, decoder settings
+inference/
+  transcribe.py      offline transcription (runtimes fast / onnx / torch)
+  runtime.py         the three runtimes + model directory layout
+  decoder.py         KenLM beam decoder (+ hotword biasing, word timestamps)
+  export_onnx.py     PyTorch weights -> the two CPU ONNX graphs (+ onnx_tools.py)
+  build_native.py    builds the native decoders in native/ (C++ / pybind11)
+  kernels/           onnxruntime custom operators of the fast graph (C++ sources + build scripts, x86-64 and Android arm64)
+  streaming/         streaming recognizer, WebSocket server, file client, browser microphone demo, exactness test
+training/
+  balbal_v2/train.py, manas/train.py   trainers (shared loop and data code in common/)
+  soup.py            weight soups
+  build_lm.py        6-gram token KenLM for the decoder
+requirements/        cpu.txt (inference without torch), full.txt (export, torch runtime, training)
+balbal-v1/           balbal-v1 code, kept for reproducibility
 ```
 
-## MODEL_DIR layout
+## Install
+
+Python 3.12 on Linux x86-64.
+
+```bash
+# CPU inference only (runtimes fast + onnx, streaming)
+pip install -r requirements/cpu.txt
+# or everything (ONNX export, runtime torch, training): torch 2.10.0 + NeMo 2.5.0
+pip install torch==2.10.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu128   # or a ROCm / CPU build
+pip install --no-deps -r requirements/full.txt
+```
+
+Build the native decoders (needs a C++17 compiler; `flashlight-text==0.0.7` and `pybind11==2.10.4` from the requirements):
+
+```bash
+python inference/build_native.py              # builds inference/native/*.so, then checks them against flashlight-text
+```
+
+Build the custom operators of the fast graph (needs g++; the onnxruntime 1.30 headers are vendored in `inference/kernels/third_party/`):
+
+```bash
+inference/kernels/build.sh                    # -> inference/kernels/libbalbal_ops.so (MARCH=x86-64-v3 for a portable build)
+python inference/kernels/test_kernels.py      # PkmRead / PkmReadQ8 vs numpy, RelPosScore vs the stock operators (bit-identical)
+ANDROID_NDK=/path/to/ndk inference/kernels/build_android.sh   # Android arm64 -> inference/kernels/android-arm64/
+```
+
+`BALBAL_OPS_LIB` points the runtime at another build of the library.
+
+## Model directory
+
+Every tool takes `--model-dir MODEL_DIR` (or the environment variable `BALBAL_MODEL_DIR`):
 
 ```
 MODEL_DIR/
-  conformer.pt                     PyTorch state dict (balbal-v1)
-  tokenizer/tokenizer.model        SentencePiece
-  tokenizer/tokenizer.vocab
-  tokenizer/vocab.txt
-  lm/model.binary                  6-gram token KenLM (trie)
-  lm/tokenizer.model               the same SentencePiece
-  model-ext.onnx, model-ext.data   (ONNX runtime only; written by export_onnx.py)
+  model.json                         {"model": "balbal-v2"} or {"model": "balbal-v2-manas"}
+  model.pt                           PyTorch weights                    (runtime torch, ONNX export)
+  tokenizer/                         tokenizer.model, tokenizer.vocab, vocab.txt
+  lm/                                model.binary (KenLM), tokenizer.model
+  onnx/model.onnx (+ .data)          fast graph, custom operators       (runtime fast, the default)
+  onnx/model-plain.onnx (+ .data)    standard operators only            (runtime onnx)
 ```
 
-Pass it with `--model-dir MODEL_DIR` or the `BALBAL_MODEL_DIR` environment variable. To download:
+The ONNX graphs are made from `model.pt` (any 16 kHz-readable clips serve as the parity check; a few seconds each):
 
 ```bash
-huggingface-cli download erayyapagci/balbal-v1 --local-dir MODEL_DIR
+python inference/export_onnx.py --model-dir MODEL_DIR clip1.wav clip2.wav clip3.wav
 ```
 
-## Inference
+It writes both graphs and `onnx/export.json` (log-probability and frame-argmax agreement with PyTorch). balbal-v2-manas stores its
+matrix weights in int8 by default (`--int8 on|off`); both fast graphs store the memory table in int8.
 
-Linux x86-64, Python 3.12.
-
-**PyTorch/NeMo (CPU or GPU):**
+## Offline transcription
 
 ```bash
-python -m venv .venv && . .venv/bin/activate
-python inference/setup_env.py --device cpu --model-dir MODEL_DIR   # torch 2.10 + pinned NeMo, builds the decoder
-python inference/transcribe.py --model-dir MODEL_DIR speech.wav --device cpu
+python inference/transcribe.py --model-dir MODEL_DIR speech.wav                  # fast CPU runtime
+python inference/transcribe.py --model-dir MODEL_DIR --runtime onnx speech.wav   # standard onnxruntime operators only
+python inference/transcribe.py --model-dir MODEL_DIR --runtime torch speech.wav  # PyTorch / NeMo (--device cuda for a GPU)
+python inference/transcribe.py --model-dir MODEL_DIR --hotwords "Eray,Hasan" call.wav
 ```
 
-The output is one JSON line per file (`text`, chunks, timings); `--text-only` prints only the text.
-WAV/FLAC/OGG are read directly, other formats through FFmpeg; resampling to 16 kHz uses the same resampler as training
-(scipy polyphase).
+One JSON line per file: `text`, `words` (`word`, `start`, `end` in seconds), `duration_seconds`, `inference_seconds`,
+`realtime_factor`. `--text-only` prints the text alone, `--threads` sets the CPU threads (default `ASR_THREADS` or 8),
+`--decoder flashlight` runs flashlight-text's own beam search (same best path as the default native decoder). Audio longer than
+30 s is cut into 30 s chunks. WAV / FLAC / OGG are read directly, other formats through FFmpeg.
 
-**ONNX (CPU only, no torch/NeMo needed):**
-
-```bash
-python inference/export_onnx.py --model-dir MODEL_DIR sample1.wav sample2.wav   # once, in the PyTorch environment
-pip install -r inference/requirements-onnx.txt && python inference/build_native.py
-python inference/runtime_onnx.py --model-dir MODEL_DIR speech.wav                  # threads via ASR_THREADS
-```
-
-`export_onnx.py` rewrites the mel front end as a DFT convolution, the refiner attention and memory reads as shape-independent
-ops, and the encoder self-attention and subsampling masks as additive biases and broadcasts (fewer single-threaded ops); it measures the difference to the NeMo model on the clips you give it (`export.json`) and moves the
-weights to a separate 64 KiB-aligned file (onnxruntime memory-maps it).
-
-Decoder self-test (synthetic input): `python inference/self_test.py --model-dir MODEL_DIR`.
-
-From Python:
+In Python:
 
 ```python
-import sys; sys.path.insert(0, 'inference')
-from transcribe import Transcriber
-asr = Transcriber('MODEL_DIR', device='cpu')
-print(asr.transcribe('speech.wav')['text'])
+import sys; sys.path[:0] = ['inference', '.']
+from runtime import Engine
+from balbal.audio import read_audio
+engine = Engine('MODEL_DIR')                       # runtime='fast' | 'onnx' | 'torch'
+print(engine.transcribe(read_audio('speech.wav'))['text'])
 ```
 
-**Hotwords:** give the names or words you expect in the recording and the decoder favours them. The model and the language
-model do not change.
+## Streaming
+
+The models are full-context, so streaming re-runs the graph on recent audio. Two modes:
+
+- `segment` (default): every 0.32 s the graph runs once over the open segment and the whole segment is re-decoded. Partials equal
+  the final text except for the last ~0.6 s. A segment ends after 0.5 s of quiet, blank audio, or at 5 s (cut at a short pause first).
+- `window`: a sliding window (8 s left context, 0.32 s chunk, 0.64 s lookahead) commits each chunk once to an incremental beam
+  search; a closed segment is re-decoded with full context for its final text.
+
+The streaming decoder (`inference/native/ctc_stream_decoder.cpp`) returns the same best path as the offline decoder on the same frames.
 
 ```bash
-python inference/runtime_onnx.py --model-dir MODEL_DIR --hotwords "Eray,Hasan" speech.wav   # same flag in transcribe.py
+python inference/streaming/server.py --model-dir MODEL_DIR [--mode segment|window] [--port 8791] [--workers 2 --threads 4]
+python inference/streaming/client.py speech.wav --url ws://127.0.0.1:8791/ws      # streams a file in real time
+# browser microphone demo: http://127.0.0.1:8791/
+python inference/streaming/test_equiv.py --model-dir MODEL_DIR a.wav b.wav       # streaming == offline checks
 ```
 
-From Python: `asr.transcribe('speech.wav', hotwords=['Eray', 'Hasan'])`. Every token that extends a hotword earns
-`hotword_bonus` (`configs/decoder.json`, 1.0) per character; the bonus is taken back if the word is not completed. Chosen on
-the development set: given each clip's names plus 10 unrelated names, the share of names spelled correctly rose from 66% to
-85%; with only unrelated names, WER rose by about 0.2 points.
+WebSocket protocol (`ws://HOST:PORT/ws`):
 
-**Word timestamps:** every result also has a `words` field: `[{"word": "Yani", "start": 0.0, "end": 0.28}, ...]` (seconds;
-30 s chunks are shifted by their start time). The times come from the CTC frames (40 ms) of the best beam-search path, the
-same method as the balbal Android app's captions (`inference/word_timing.py`). On 100 development clips, 94.5% of word starts
-are within 100 ms of MMS forced alignment. From Python: `asr.transcribe('speech.wav')['words']`.
-
-### Streaming (live transcription)
-
-`inference/streaming.py` transcribes a recording while it grows (a microphone, a call), with the same method as the balbal
-Android app: the audio is cut into the same 30 s chunks as offline transcription, a complete chunk is decoded once and
-kept, and the open (last, growing) chunk is decoded again on every update (default: every 0.6 s of new audio). So each
-update costs one decode of at most 30 s of audio. Text inside the open chunk can still change as more audio arrives; text of
-closed chunks (`stable_text`) never changes, and `finish()` returns exactly what offline transcription gives for the whole
-recording (words and timestamps included). balbal-v1 is a full-context model, so this is re-decoding rather than an
-incremental streaming architecture.
-
-```bash
-arecord -q -f S16_LE -r 16000 -c 1 | python inference/streaming.py --model-dir MODEL_DIR -     # microphone (Linux)
-python inference/streaming.py --model-dir MODEL_DIR --simulate speech.wav                     # a file, paced in real time
-```
-
-It prints one JSON line per update (`seconds`, `text`, `final`); the last line is the final result with `words`. Input on
-stdin is raw 16-bit mono 16 kHz PCM. `--runtime torch` uses the PyTorch model instead of ONNX; `--hotwords` works as above.
-
-From Python (either runtime):
-
-```python
-from runtime_onnx import Engine          # or: from transcribe import Transcriber
-from streaming import Stream
-stream = Stream(Engine('MODEL_DIR'), update_seconds=0.6, hotwords=None)
-for piece in audio_pieces:               # mono float32 at 16 kHz, any length
-    update = stream.feed(piece)          # None until update_seconds of new audio arrived
-    if update:
-        print(update['text'])
-print(stream.finish()['text'])
-```
-
-Cost: on 4 CPU threads (ONNX), a 65 s recording fed in 0.25 s pieces (86 updates) took 21.5 s of compute in total, about
-a third of real time (measured before the encoder export rewrite; now lower).
-
-## Steering
-
-balbal-v1 can be steered toward a sentence from another source (for example the text of a larger ASR system). On every
-refiner pass a small offset is added to the memory reads and optimised for a few Adam steps on CTC(sentence), only on the
-frames where the model is unsure (top probability < 0.9). The weights stay frozen and the offset is thrown away after each
-clip. The model only changes where the audio allows it: acoustically mismatched sentences are mostly rejected, and a sentence
-much shorter than what balbal hears is ignored.
-
-With Whisper-large-v3-turbo text (WER, balbal-normalizer, KenLM):
-
-| Test set | balbal-v1 | Whisper-large-v3-turbo alone | balbal-v1 steered by Turbo |
-|---|---|---|---|
-| FLEURS tr test | 6.53 | 4.11 | **3.97** |
-| General development set (Turkish) | 10.03 | 8.36 | **7.20** |
-| Mu-Bench tr-TR | 11.79 | 20.73 | **11.08** |
-| LibriSpeech test-clean (English) | 22.91 | **3.85** | 4.75 |
-
-- Where both models are good (FLEURS, general development set), steering beats both.
-- Where balbal-v1 is weak (English; balbal is a Turkish model), steering brings it close to the steering model: 22.91 → 4.75,
-  Whisper alone 3.85.
-- Where the steering model is weak (Mu-Bench phone calls; Whisper makes almost twice balbal's errors), steering does not hurt:
-  balbal keeps what it hears clearly. This gain is not statistically significant (paired bootstrap 95% interval
-  [-1.58, +0.06]).
-
-| Mode | For | Settings (`steering/steer.json`) |
+| Direction | Message | Content |
 |---|---|---|
-| `weak` | a sentence that may be wrong (another ASR, a guess) | 3 steps, lr 0.03, unsure frames only |
-| `strong` | a sentence from a trusted source | 6 steps, lr 0.03 |
-| `auto` | runs Whisper-large-v3-turbo itself and steers toward its text with `weak` | needs `transformers`; GPU recommended |
+| client → server | binary | little-endian int16 PCM, mono, 16 kHz, any piece size |
+| client → server | text `{"type": "end"}` | no more audio |
+| server → client | `ready` | `model`, `config`, `worker` |
+| server → client | `partial` | `text` (open segment incl. the provisional tail), `stable`, `start`, `joins`, `audio_end` |
+| server → client | `final` | `text`, `start`, `end`, `joins` (the segment continues the previous word) |
+| server → client | `done` | `transcript`, `stats` |
 
-On 200 held-out clips (13.16 WER unsteered): `strong` with the correct sentence goes down to 1.74 (`weak` 4.04); with a
-sentence where 15% of the words are wrong, `strong` gives 8.02 and `weak` 7.03. Steering takes about 0.25 s per clip on CPU;
-Whisper takes tens of seconds per clip on CPU.
+In Python:
 
-```bash
-python steering/steer_transcribe.py --model-dir MODEL_DIR --mode auto speech.wav          # pip install transformers
-python steering/steer_transcribe.py --model-dir MODEL_DIR --mode weak --text "Yarın saat 15'te toplantı var mı?" speech.wav
-python steering/steer_transcribe.py --model-dir MODEL_DIR --mode strong --text "..." speech.wav
+```python
+import sys; sys.path[:0] = ['inference/streaming']
+from streamer import Engine, SegmentStream
+engine = Engine('MODEL_DIR')                       # one per process
+stream = SegmentStream(engine)                     # one per live stream (Stream = window mode)
+for piece in pieces: events = stream.accept(piece) # float32, 16 kHz
+events += stream.finish(); print(stream.transcript())
 ```
-
-Every output line is a JSON object: `text` (steered), `plain_text` (unsteered), `target` (the sentence with digits turned
-into words), `guarded` (true = the sentence was rejected) and timings. Keep casing and punctuation in the sentence
-(normalized sentences steer about 0.6 WER worse). Audio longer than 30 s is cut into 30 s chunks.
-
-## Normalizer
-
-- `normalizer/turkish.py`: `normalize_turkish()`: lowercasing (Turkish İ/ı), punctuation, numbers/symbols/e-mail words; v1
-  scoring and an exact-text key for excluding held-out sentences from the language model.
-- `normalizer/metrics_v2.py`: **balbal-normalizer** scoring: the `turkish.py` normalization + fillers (ee, hı), "ile" fusion,
-  circumflex, ordinals, units, apostrophes, joined/split spelling variants, "at/et" in e-mail addresses, letter-digit codes,
-  and **numbers compared digit by digit** (`doksan` = `9 0` = `dokuz sıfır`). `corpus_metrics_v2(refs, hyps)` returns
-  WER/CER.
-- `normalizer/numbers.py`: `verbalize()`: turns digits in training labels into words (`180'e` → `yüz seksene`); returns
-  `None` for ambiguous forms and the row is dropped. balbal-v1 was trained on **words-only** labels and does not write digits.
-- `normalizer/label_clean.py`: cleans real-speech labels (stage directions, stutters, symbols/URLs, more than 25 characters
-  per second, text repeated more than 5 times).
-- `normalizer/itn.py`: inverse normalization: `itn_text('sıfır beş yüz otuz iki')` → `0 532`; `itn_digits()` gives the
-  digit-by-digit form used in scoring.
 
 ## Training
 
-balbal-v1 is a continued training run that starts from the weights of the previous stage (this stage: 9000 updates;
-the released weights are the raw step-6000 weights):
+Manifests are JSON lines, one row per clip:
+
+```json
+{"id": "a1", "audio_path": "clips/a1.wav", "duration_seconds": 4.2, "text": "Merhaba, nasılsınız?", "source": "my-set"}
+```
+
+Optional fields: `lang` (`tr`, `en` or `ns` for non-speech; default `--default-lang`, `ns` for an empty text), `lang_spans`
+(`[[start_s, end_s, "en"], ...]` for code-switching), `pcm_sha256` (checked when present), `parts` (a row joined from segments of
+other files). See `training/common/data.py`.
 
 ```bash
-TEL_P=0.5 EDGE_P=0.5 LOADER_WORKERS=8 python training/train.py runs/balbal-v1 \
-    --init PREVIOUS_STAGE.pt --tokenizer-dir MODEL_DIR/tokenizer \
-    --train train.jsonl --dev dev.jsonl \
-    --updates 9000 --lr 1e-4 --eval-every 3000 --soup 0.5 --micro 16
+# balbal-v2: from balbal-v2 (or balbal-v1) weights
+python training/balbal_v2/train.py runs/my-balbal --tokenizer-dir MODEL_DIR/tokenizer --init MODEL_DIR/model.pt \
+    --train train.jsonl --dev dev.jsonl
+# balbal-v2-manas: from balbal-v2-manas weights, here with the fine-tune settings
+python training/manas/train.py runs/my-manas --tokenizer-dir MODEL_DIR/tokenizer --init MODEL_DIR/model.pt \
+    --train train.jsonl --dev dev.jsonl --lr 5e-5 --epochs 2 --decay .5 --soup ""
+# balbal-v2-manas from NVIDIA's English FastConformer-CTC-Large (encoder only; head, refiner and memory start fresh)
+python training/manas/train.py runs/my-manas --tokenizer-dir MY_TOKENIZER --nemo stt_en_fastconformer_ctc_large.nemo --step-offset 0 \
+    --train train.jsonl --dev dev.jsonl
+# multi-GPU
+torchrun --nproc_per_node 4 training/balbal_v2/train.py runs/my-balbal ...
 ```
 
-- **Data** (`training/data.py`): JSONL rows (`audio_path`, `pcm_sha256`, `duration_seconds`, `text`, `source`), or virtual
-  rows (`parts`) that join consecutive pieces of the same recording on the fly. Clips that do not fit CTC are dropped.
-- **Augmentation**: telephone band (`TEL_P`: 8 kHz, 300 Hz high-pass, mu-law), edge shape (`EDGE_P`: trim silent edges, add
-  0–0.6 s of digital zeros; draws seeded from `--seed`, epoch and row, so runs are reproducible), NeMo SpecAugment.
-- **Objective**: 0.3 × CTC(encoder) + 0.7 × mean CTC(3 refiner passes), bf16.
-- **Optimization**: Muon (hidden linear layers, per head) + AdamW (the rest; memory value table at 5× learning rate), 10-step
-  warm-up + cosine (1 → 0.1), gradient clipping 1.0, 32 clips per update.
-- **Evaluation**: greedy WER and CER (balbal-normalizer) on `--dev` every `--eval-every` steps, raw and as a `--soup` average; the best
-  5 checkpoints are kept. (The original run also ranked checkpoints with KenLM on an internal DEV set; that part is not in
-  this repository.)
-- **Language model**: `training/build_lm.py`: 6-gram token KenLM over all training text the model saw; held-out sentences
-  are excluded by exact match.
-- **Calibration**: `training/calibrate.py`: a 3×3 grid of alpha × temperature on DEV; the default changes only if the paired
-  bootstrap 95% confidence interval is entirely below 0 (it did not change for balbal-v1).
-- **Soup**: `training/soup.py OUT.pt 0.5:a.pt 0.5:b.pt`.
+The defaults are the release recipes:
 
-On ROCm, MIOpen is off in training steps (about 41% faster) and on during evaluation.
+| | balbal-v2 | balbal-v2-manas |
+|---|---|---|
+| Update | 64 clips, micro-batch 16 | 64 clips, micro-batch 8 |
+| Length | 5 epochs | 4.5 epochs, then a 2-epoch fine-tune |
+| LR | 1.4e-4, 500 warmup updates, flat, linear decay over the last 20 % to 10 % | 1.4e-4, 500 warmup updates, flat to epoch 2.5, linear decay to 10 %; fine-tune 5e-5, decay over the last 50 % |
+| Optimizer | Muon + AdamW, weight decay .001 | Muon (bf16 Newton-Schulz) + AdamW, weight decay .01 |
+| Memory table LR | 5x | 5x (and the learned read temperature) |
+| Objective | 0.3 x base CTC + 0.7 x mean CTC of the 3 refiner passes + 0.1 x frame language CE | same |
+| Released weights | final checkpoint of the 5 epochs | uniform soup of the fine-tune's 7 evaluations, epochs 0.5 to 2.0 |
 
-## Citation
+Each run writes `config.json`, `metrics.jsonl` (a progress line every 100 updates, an evaluation every quarter epoch with greedy WER /
+CER on `--dev`, overall and per `source`), the best checkpoints by dev WER in `checkpoints/`, `state.pt` (`--resume` continues the
+run) and `final.pt`. `--cond` also trains an utterance-level language condition (tr / en / auto). All options: `--help`.
 
-If you use balbal-v1 in your work, you can cite it as:
-
-```bibtex
-@misc{yapagci2026balbal,
-  author       = {Eray Yapa{\u{g}}c{\i}},
-  title        = {balbal-v1: A Small Turkish Speech Recognition Model},
-  year         = {2026},
-  month        = oct,
-  howpublished = {\url{https://erayy.com/balbal-blog}},
-  note         = {Code: \url{https://github.com/erayyap/balbal}}
-}
+```bash
+python training/soup.py soup.pt runs/my-manas/checkpoints/step*.pt          # uniform weight soup
+python training/build_lm.py --tokenizer MODEL_DIR/tokenizer/tokenizer.model --train train.jsonl --heldout dev.jsonl \
+    --out MODEL_DIR/lm --quantize                                              # the decoder's 6-gram token KenLM
 ```
 
-## License
+## Checks
 
-The code is licensed under the [Apache License 2.0](LICENSE) (Copyright 2026 Eray Yapağcı). The license covers only the
-code in this repository. The model weights, tokenizer and language model are released separately under the
-[balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE) on
-[Hugging Face](https://huggingface.co/erayyapagci/balbal-v1): free for research and non-commercial use, and for small
-businesses' own commercial use; selling speech recognition products built on them needs a commercial license. Third-party
-licenses: `inference/licenses/` (flashlight-text, KenLM).
+The commands used to test this release on CPU (`MODEL_DIR` with `model.pt`, `tokenizer/` and `lm/`; `clip.wav` a few seconds of Turkish speech):
 
----
+```bash
+python inference/build_native.py
+inference/kernels/build.sh && python inference/kernels/test_kernels.py
+python inference/export_onnx.py --model-dir MODEL_DIR clip.wav other1.wav other2.wav
+for r in fast onnx torch; do python inference/transcribe.py --model-dir MODEL_DIR --runtime $r --text-only clip.wav; done   # same text
+python inference/streaming/test_equiv.py --model-dir MODEL_DIR clip.wav other1.wav other2.wav
+python inference/streaming/server.py --model-dir MODEL_DIR --port 8791 &   # then:
+python inference/streaming/client.py clip.wav --url ws://127.0.0.1:8791/ws
+LOADER_WORKERS=0 python training/balbal_v2/train.py runs/check --tokenizer-dir MODEL_DIR/tokenizer --init MODEL_DIR/model.pt \
+    --train toy.jsonl --dev toy-dev.jsonl --batch 4 --micro 2 --updates 3 --eval-epochs 1 --progress-every 1
+```
 
-## Türkçe özet
+## License and citation
 
-**balbal-v1** Türkçe konuşma tanıma modelinin kodu: Conformer-CTC (16 katman, d_model 176, SentencePiece 1024), 3 geçişli
-2 katmanlı düzeltici ve ürün-anahtar akustik bellek (45.4M saklanan / 15.4M aktif parametre), 6-gram token KenLM ile çözülür.
-Sonuçlar: FLEURS tr test **6.54 WER** (balbal-normalizer), Mu-Bench tr-TR **11.93 WER** (resmi puanlama).
-
-Ağırlıklar Hugging Face'te: [erayyapagci/balbal-v1](https://huggingface.co/erayyapagci/balbal-v1)
-([balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE)). `inference/` çıkarım
-(PyTorch ve ONNX), kelime zaman damgaları, kelime önceliği (`--hotwords`) ve canlı yazıya dökme (`streaming.py`) içerir;
-`steering/` yönlendirme, `normalizer/` Türkçe normalizasyon ve puanlama, `training/` eğitim kodudur. Kullanım ayrıntıları
-yukarıdaki İngilizce bölümlerde. Kod Apache 2.0 lisanslıdır.
+Code: Apache License 2.0 (`LICENSE`, `NOTICE`). The balbal-v2-manas model configuration derives from NVIDIA's
+`stt_en_fastconformer_ctc_large` (CC-BY-4.0). Weights: see their model cards (coming soon on Hugging Face). How to cite: `CITATION.cff`.

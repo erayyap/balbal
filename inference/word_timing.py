@@ -54,6 +54,7 @@ def words_from_spans(spans, sp, offset_seconds=0.):
         return []
     if len(raw) > 1 and raw[0][1] <= 1 and raw[1][1] - raw[0][2] > JOIN:
         raw[0][1] = max(0, raw[1][1] - max(6, round(len(raw[0][0]) * 1.75)))
+        raw[0][2] = raw[1][1]   # the moved word runs up to the next one
     for w in raw:
         w[1] = max(0, w[1] - LEAD)
     for k, w in enumerate(raw):

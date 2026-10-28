@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>balbal streaming</title>
+<style>
+  :root { --bg: #14110e; --fg: #efe5d2; --muted: #9c8f7a; --gold: #d4a541; --card: #1e1914; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 18px/1.6 system-ui, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } .sub { color: var(--muted); font-size: 14px; margin-bottom: 18px; }
+  button { background: var(--gold); color: #1d1408; border: 0; border-radius: 8px; padding: 10px 20px; font-size: 16px; font-weight: 600; cursor: pointer; }
+  button.stop { background: #a33; color: #fff; }
+  #text { background: var(--card); border-radius: 10px; padding: 16px 18px; min-height: 240px; margin-top: 16px; white-space: pre-wrap; }
+  .prov { color: var(--muted); } .stable { color: var(--fg); }
+  #stats { color: var(--muted); font-size: 13px; margin-top: 10px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<main>
+  <h1>balbal streaming</h1>
+  <div class="sub" id="model">connecting…</div>
+  <button id="btn">Başlat</button>
+  <div id="text"></div>
+  <div id="stats"></div>
+</main>
+<script>
+const btn = document.getElementById('btn'), out = document.getElementById('text'), stats = document.getElementById('stats');
+let ws = null, ctx = null, node = null, src = null, finals = '', partial = null, t0 = 0, sent = 0;
+
+function render() {
+  out.textContent = '';
+  out.append(document.createTextNode(finals));
+  if (partial) {
+    const sep = finals && !partial.joins ? ' ' : '';
+    const st = document.createElement('span'); st.className = 'stable'; st.textContent = sep + partial.stable;
+    const pr = document.createElement('span'); pr.className = 'prov';
+    pr.textContent = partial.text.startsWith(partial.stable) ? partial.text.slice(partial.stable.length) : '';
+    if (!partial.text.startsWith(partial.stable)) st.textContent = sep + partial.text;
+    out.append(st, pr);
+  }
+}
+
+async function start() {
+  finals = ''; partial = null; render(); sent = 0;
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws.binaryType = 'arraybuffer';
+  ws.onmessage = (m) => {
+    const e = JSON.parse(m.data);
+    if (e.type === 'ready') document.getElementById('model').textContent = e.model + ' · ' + e.config.mode + ' · chunk ' + e.config.chunk + ' s · lookahead ' + e.config.right + ' s';
+    if (e.type === 'partial') { partial = e; render(); }
+    if (e.type === 'final') { finals += (finals && !e.joins ? ' ' : '') + e.text; partial = null; render(); }
+    if (e.type === 'done') { stats.textContent = 'audio ' + e.stats.audio_s + ' s · compute ' + (e.stats.compute_rtf * 100).toFixed(1) + '% of real time · ' + e.stats.windows + ' windows'; ws.close(); }
+  };
+  await new Promise((r) => ws.onopen = r);
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: true } });
+  ctx = new AudioContext();
+  const worklet = `class P extends AudioWorkletProcessor { process(i) { if (i[0][0]) this.port.postMessage(i[0][0].slice(0)); return true; } } registerProcessor('p', P);`;
+  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([worklet], { type: 'application/javascript' })));
+  src = ctx.createMediaStreamSource(stream); node = new AudioWorkletNode(ctx, 'p');
+  const ratio = ctx.sampleRate / 16000; let acc = [], pos = 0;
+  node.port.onmessage = (m) => {          // block-average decimation to 16 kHz, send ~100 ms PCM16 pieces
+    const x = m.data;
+    for (; pos < x.length; pos += ratio) {
+      const a = Math.floor(pos), b = Math.min(x.length, Math.floor(pos + ratio)); let s = 0;
+      for (let k = a; k < Math.max(b, a + 1); k++) s += x[k];
+      acc.push(s / Math.max(1, b - a));
+    }
+    pos -= x.length;
+    if (acc.length >= 1600 && ws.readyState === 1) {
+      const pcm = new Int16Array(acc.length);
+      for (let k = 0; k < acc.length; k++) pcm[k] = Math.max(-1, Math.min(1, acc[k])) * 32767;
+      ws.send(pcm.buffer); sent += acc.length; acc = [];
+      stats.textContent = 'sent ' + (sent / 16000).toFixed(1) + ' s';
+    }
+  };
+  src.connect(node); t0 = performance.now();
+  btn.textContent = 'Durdur'; btn.className = 'stop';
+}
+
+function stop() {
+  if (src) src.mediaStream.getTracks().forEach((t) => t.stop());
+  if (ctx) ctx.close();
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'end' }));
+  btn.textContent = 'Başlat'; btn.className = '';
+}
+
+btn.onclick = () => (btn.className === 'stop' ? stop() : start());
+fetch('/health').then((r) => r.json()).then((h) => document.getElementById('model').textContent = h.model + ' · hazır');
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+# CPU inference without torch / NeMo: runtimes fast + onnx, streaming server and client.
+# Then build the decoder (python inference/build_native.py) and the kernels (inference/kernels/build.sh).
+numpy==2.2.6
+scipy==1.18.0
+soundfile==0.14.0
+sentencepiece==0.2.2
+onnxruntime==1.30.0
+flashlight-text==0.0.7
+pybind11==2.10.4
+aiohttp==3.14.3

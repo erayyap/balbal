@@ -15,7 +15,8 @@ runs/
 *.binary
 *.npz
 *.npy
-# Built decoder extension
+# Built decoder extensions and custom operator libraries
+inference/kernels/android-arm64/
 *.so
 __pycache__/
 *.pyc

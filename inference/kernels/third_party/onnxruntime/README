@@ -1,0 +1,3 @@
+Header files of ONNX Runtime 1.30.0 (https://github.com/microsoft/onnxruntime, include/onnxruntime/core/session),
+unmodified, MIT License (LICENSE). Only needed to compile the custom operators; the runtime itself comes from the onnxruntime
+Python package (same version).
