@@ -10,7 +10,10 @@ Turkish speech recognition: model, CPU inference (offline and streaming) and tra
 Both models add a 3-pass loop refiner with a product-key acoustic memory on top of the CTC encoder and decode with a 6-gram token
 KenLM beam search. Output: cased, punctuated text with per-word timestamps.
 
-**Weights: coming soon on Hugging Face.** This repository holds the code only. The previous model's code is in [`balbal-v1/`](balbal-v1/).
+[![balbal-v2 weights on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-balbal--v2-yellow?style=for-the-badge)](https://huggingface.co/erayyapagci/balbal-v2)
+[![balbal-v2-manas weights on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-balbal--v2--manas-yellow?style=for-the-badge)](https://huggingface.co/erayyapagci/balbal-v2-manas)
+
+This repository holds the code; the weights are on Hugging Face. The previous model's code is in [`balbal-v1/`](balbal-v1/).
 
 ## Contents
 
@@ -216,4 +219,4 @@ LOADER_WORKERS=0 python training/balbal_v2/train.py runs/check --tokenizer-dir M
 ## License and citation
 
 Code: Apache License 2.0 (`LICENSE`, `NOTICE`). The balbal-v2-manas model configuration derives from NVIDIA's
-`stt_en_fastconformer_ctc_large` (CC-BY-4.0). Weights: see their model cards (coming soon on Hugging Face). How to cite: `CITATION.cff`.
+`stt_en_fastconformer_ctc_large` (CC-BY-4.0). Weights: see their model cards ([balbal-v2](https://huggingface.co/erayyapagci/balbal-v2), [balbal-v2-manas](https://huggingface.co/erayyapagci/balbal-v2-manas)). How to cite: `CITATION.cff`.
