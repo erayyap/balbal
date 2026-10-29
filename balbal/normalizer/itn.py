@@ -2,7 +2,7 @@
 
 The balbal models are trained on words-only labels, so it writes numbers as words ('bin dokuz yüz doksan beş'). Two views:
 
-- itn_text(text): display form. Each maximal run of number words becomes its spoken groups as numbers
+- itn_text(text): display form (itn_words: the same over timed words). Each maximal run of number words becomes its spoken groups as numbers
   ('sıfır doksan kırk beş altmış yedi' -> '0 90 45 67', 'dokuz sıfır bir' -> '9 0 1', 'bin dokuz yüz doksan beş' -> '1995').
   A lone ambiguous word (bir, on, yüz, altı, bin) stays a word. Punctuation is kept: a run ends at a token that carries
   punctuation, which is re-attached after the digits; capitalised words match case-insensitively. A suffixed number
@@ -81,10 +81,20 @@ def _split(tok):
 
 def itn_text(text):
     """Model output -> the same text with spoken number runs written as numbers."""
-    toks = text.split(); out, i = [], 0
+    return ' '.join(tok for tok, _, _ in _itn_runs(text.split()))
+
+
+def itn_words(words):
+    """itn_text over timed words [{'word', 'start', 'end'}]: a number run becomes one entry spanning its words."""
+    return [dict(words[i], word=tok, end=words[j - 1]['end']) for tok, i, j in _itn_runs([w['word'] for w in words])]
+
+
+def _itn_runs(toks):
+    """Tokens -> [(output token, first input index, end input index)]."""
+    out, i = [], 0
     while i < len(toks):
         pre, core, post = _split(toks[i])
-        if low(core) not in NUM: out.append(toks[i]); i += 1; continue
+        if low(core) not in NUM: out.append((toks[i], i, i + 1)); i += 1; continue
         j, words, last_post = i, [], ''
         while j < len(toks):
             p0, c, p1 = _split(toks[j])
@@ -95,9 +105,9 @@ def itn_text(text):
             if low(c) not in NUM or (p0 and j > i): break
             words.append(low(c)); j += 1; last_post = p1
             if p1: break
-        if len(words) == 1 and words[0] in AMBIG: out.append(toks[i]); i += 1; continue
-        out.append(pre + ' '.join(parse(words)) + last_post); i = j
-    return ' '.join(out)
+        if len(words) == 1 and words[0] in AMBIG: out.append((toks[i], i, i + 1)); i += 1; continue
+        out.append((pre + ' '.join(parse(words)) + last_post, i, j)); i = j
+    return out
 
 
 if __name__ == '__main__':

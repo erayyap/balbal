@@ -15,6 +15,7 @@ Runtimes (all CPU unless runtime torch gets device cuda):
   torch  the PyTorch/NeMo model (needs torch + NeMo)
 All three give [frames, V + 1] natural-log CTC probabilities (40 ms frames, blank last) to decoder.KenLMDecoder.
 Audio longer than 30 s is cut into fixed 30 s chunks (no VAD); each chunk is decoded on its own.
+The models write numbers as words; transcribe() turns spoken number runs into digits (ITN) unless itn=False.
 """
 from __future__ import annotations
 import json
@@ -29,6 +30,7 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parent)]
 from decoder import KenLMDecoder
 from balbal import models as M
+from balbal.normalizer.itn import itn_text, itn_words
 
 RUNTIMES = ('fast', 'onnx', 'torch')
 OPS_LIB = Path(os.getenv('BALBAL_OPS_LIB', HERE / 'kernels/libbalbal_ops.so'))
@@ -91,14 +93,17 @@ class Engine:
         out = self.decoder.decode_words(lp, hotwords, offset_seconds)
         return dict(out, acoustic_seconds=t1 - t0, decoder_seconds=time.perf_counter() - t1)
 
-    def transcribe(self, wave, chunk_seconds=30., hotwords=None):
-        """Mono float32 waveform at 16 kHz -> {'text', 'words', 'duration_seconds', 'inference_seconds', 'realtime_factor'}."""
+    def transcribe(self, wave, chunk_seconds=30., hotwords=None, itn=True):
+        """Mono float32 waveform at 16 kHz -> {'text', 'words', 'duration_seconds', 'inference_seconds', 'realtime_factor'}.
+        itn: write spoken numbers as digits ('bin dokuz yüz doksan beş' -> '1995'); a number run becomes one timed word."""
         wave = np.asarray(wave, dtype=np.float32)
         if wave.ndim != 1 or not wave.size or not np.isfinite(wave).all():
             raise ValueError('Expected a nonempty, finite mono 16 kHz waveform')
         step = int(chunk_seconds * 16000)
         chunks = [self.transcribe_chunk(wave[i:i + step], i / 16000, hotwords) for i in range(0, len(wave), step)]
         elapsed = sum(c['acoustic_seconds'] + c['decoder_seconds'] for c in chunks)
-        return dict(text=' '.join(c['text'] for c in chunks if c['text']), words=[w for c in chunks for w in c['words']],
+        text, words = ' '.join(c['text'] for c in chunks if c['text']), [w for c in chunks for w in c['words']]
+        if itn: text, words = itn_text(text), itn_words(words)
+        return dict(text=text, words=words,
                     model=self.model, runtime=self.runtime, duration_seconds=len(wave) / 16000, inference_seconds=elapsed,
                     realtime_factor=len(wave) / 16000 / elapsed if elapsed else None)

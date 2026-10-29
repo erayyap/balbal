@@ -32,6 +32,7 @@ def main():
     p.add_argument('--device', default='cpu', help='runtime torch only: cpu or cuda')
     p.add_argument('--threads', type=int, default=None, help='CPU threads (default: ASR_THREADS or 8)')
     p.add_argument('--hotwords', default='', help='comma-separated names/words to favour, e.g. "Eray,Hasan"')
+    p.add_argument('--no-itn', action='store_true', help='keep numbers as spoken words (default: digits)')
     p.add_argument('--text-only', action='store_true')
     args = p.parse_args()
     hotwords = [w.strip() for w in args.hotwords.split(',') if w.strip()]
@@ -39,7 +40,7 @@ def main():
         engine = Engine(args.model_dir, args.model, args.runtime, args.threads, args.device, args.decoder, lm_dir=args.lm_dir)
     for path in args.audio:
         with redirect_stdout(sys.stderr):
-            result = engine.transcribe(read_audio(path), hotwords=hotwords)
+            result = engine.transcribe(read_audio(path), hotwords=hotwords, itn=not args.no_itn)
         print(result['text'] if args.text_only else json.dumps({'file': str(path), **result}, ensure_ascii=False), flush=True)
 
 
