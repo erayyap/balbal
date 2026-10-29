@@ -28,6 +28,8 @@ import balbal
 print(balbal.transcribe("speech.wav")["text"])
 ```
 
+On Android: [balbal-android-0.8.apk](https://github.com/erayyap/balbal/releases/download/android-v0.8/balbal-android-0.8.apk) (36 MB, Android 8+, arm64). Both models run offline on the phone; tap İndir in the app to download one.
+
 The [`balbal` package](https://pypi.org/project/balbal/) is the CPU inference below (fast graph + native KenLM beam decoder),
 prebuilt; its sources and wheel build are in [`pypi/`](pypi/). The rest of this README runs from a checkout.
 
