@@ -1,7 +1,7 @@
 {
-  "alpha": 0.9,
+  "alpha": 0.75,
   "beta": 1.5,
-  "temperature": 1.0,
+  "temperature": 1.2,
   "blank_bias": 0.0,
   "beam": 64,
   "top_tokens": 12,
