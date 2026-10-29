@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "balbal"
+version = "0.1.0"
+description = "Open Turkish speech recognition on CPU: balbal-v2 and balbal-v2-manas, weights fetched from Hugging Face on first use."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11,<3.13"
+authors = [{ name = "Eray Yapağcı" }]
+keywords = ["speech recognition", "asr", "stt", "turkish", "onnx", "cpu"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: Turkish",
+    "Natural Language :: English",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "soundfile>=0.12",
+    "sentencepiece>=0.2.0",
+    "onnxruntime>=1.30.0",
+    "flashlight-text==0.0.7",
+    "huggingface_hub>=0.23",
+]
+
+[project.scripts]
+balbal = "balbal.cli:main"
+
+[project.urls]
+Homepage = "https://erayy.com/balbal"
+Source = "https://github.com/erayyap/balbal"
+"Model: balbal-v2" = "https://huggingface.co/erayyapagci/balbal-v2"
+"Model: balbal-v2-manas" = "https://huggingface.co/erayyapagci/balbal-v2-manas"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = ["balbal", "balbal._native"]
+include-package-data = false
+
+[tool.setuptools.package-data]
+balbal = ["configs/*/decoder.json", "licenses/*"]
+"balbal._native" = ["*.so"]

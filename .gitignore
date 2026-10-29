@@ -21,3 +21,8 @@ inference/kernels/android-arm64/
 __pycache__/
 *.pyc
 .venv*/
+# PyPI package build output
+pypi/build/
+pypi/dist/
+pypi/wheelhouse/
+pypi/src/*.egg-info/

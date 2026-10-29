@@ -15,6 +15,22 @@ KenLM beam search. Output: cased, punctuated text with per-word timestamps.
 
 This repository holds the code; the weights are on Hugging Face. The previous model's code is in [`balbal-v1/`](balbal-v1/).
 
+## Quick start
+
+```bash
+pip install balbal                            # Linux x86-64, Python 3.11 or 3.12
+balbal run speech.wav                         # balbal-v2; the model downloads from Hugging Face on the first run
+balbal run --model manas --json speech.mp3    # balbal-v2-manas; text + per-word timestamps
+```
+
+```python
+import balbal
+print(balbal.transcribe("speech.wav")["text"])
+```
+
+The [`balbal` package](https://pypi.org/project/balbal/) is the CPU inference below (fast graph + native KenLM beam decoder),
+prebuilt; its sources and wheel build are in [`pypi/`](pypi/). The rest of this README runs from a checkout.
+
 ## Contents
 
 ```
@@ -33,6 +49,7 @@ training/
   soup.py            weight soups
   build_lm.py        6-gram token KenLM for the decoder
 requirements/        cpu.txt (inference without torch), full.txt (export, torch runtime, training)
+pypi/                the pip package (balbal run, balbal.transcribe; Hugging Face download) and its manylinux wheel build
 balbal-v1/           balbal-v1 code, kept for reproducibility
 ```
 
