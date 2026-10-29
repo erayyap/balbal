@@ -12,8 +12,9 @@ KenLM beam search. Output: cased, punctuated text with per-word timestamps.
 
 [![balbal-v2 weights on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-balbal--v2-yellow?style=for-the-badge)](https://huggingface.co/erayyapagci/balbal-v2)
 [![balbal-v2-manas weights on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-balbal--v2--manas-yellow?style=for-the-badge)](https://huggingface.co/erayyapagci/balbal-v2-manas)
+[![Model page, benchmarks and browser demo](https://img.shields.io/badge/erayy.com-model%20page%20%26%20demo-c9a24a?style=for-the-badge)](https://erayy.com/balbal/)
 
-This repository holds the code; the weights are on Hugging Face. The previous model's code is in [`balbal-v1/`](balbal-v1/).
+This repository holds the code; the weights are on Hugging Face. Benchmarks, a browser demo and the Android app are on the [model page](https://erayy.com/balbal/) ([Türkçe](https://erayy.com/tr/balbal/)). The previous model's code is in [`balbal-v1/`](balbal-v1/).
 
 ## Quick start
 
