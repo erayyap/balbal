@@ -120,7 +120,8 @@ One JSON line per file: `text`, `words` (`word`, `start`, `end` in seconds), `du
 `realtime_factor`. `--text-only` prints the text alone, `--threads` sets the CPU threads (default `ASR_THREADS` or 8),
 `--decoder flashlight` runs flashlight-text's own beam search (same best path as the default native decoder). Numbers come out
 as digits (`bin dokuz yüz doksan beş` -> `1995`, a number run is one timed word); `--no-itn` (or `itn=False`) keeps the spoken
-words the model writes. Audio longer than 30 s is cut into 30 s chunks. WAV / FLAC / OGG are read directly, other formats through FFmpeg.
+words the model writes. Audio longer than 30 s is read in overlapping windows whose CTC frames are
+stitched and decoded in one KenLM pass (no word is cut at a window edge). WAV / FLAC / OGG are read directly, other formats through FFmpeg.
 
 In Python:
 

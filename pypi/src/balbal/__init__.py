@@ -10,5 +10,5 @@ Command line: balbal run speech.wav [--model manas] [--json]
 from .engine import Model, load, transcribe
 from .hub import MODELS, download
 
-__version__ = '0.1.0'
+__version__ = '0.1.1'
 __all__ = ['Model', 'load', 'transcribe', 'download', 'MODELS', '__version__']

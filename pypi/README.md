@@ -45,7 +45,8 @@ model.transcribe(samples, sample_rate=8000)      # a NumPy waveform at any sampl
 ```
 
 `transcribe` returns `text`, `words` (`word`, `start`, `end` in seconds), `duration_seconds`, `inference_seconds` and
-`realtime_factor`. Audio longer than 30 s is cut into 30 s chunks. One `Model` per thread.
+`realtime_factor`. Audio longer than 30 s is read in overlapping windows whose CTC frames are stitched into one sequence and
+decoded in one KenLM pass, so no word is cut at a window edge. One `Model` per thread.
 
 ## Platform
 
