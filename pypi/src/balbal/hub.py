@@ -49,4 +49,15 @@ def download(model='balbal-v2', runtime='fast', revision=None, cache_dir=None, q
     if not quiet and not all((local / f).is_file() for f in files):
         print(f'balbal: downloading {name} ({runtime} runtime, ~{SIZES[name][runtime]}, once) from huggingface.co/{REPOS[name]} '
               f'to {local}', file=sys.stderr, flush=True)
-    return Path(snapshot_download(repo_id=REPOS[name], revision=revision, allow_patterns=files, local_dir=local))
+    path = Path(snapshot_download(repo_id=REPOS[name], revision=revision, allow_patterns=files, local_dir=local))
+    count_download(REPOS[name])
+    return path
+
+
+def count_download(repo):
+    """One HEAD request for config.json on main: the Hub counts model downloads by requests to that file (no data is sent)."""
+    try:
+        from huggingface_hub import file_exists
+        file_exists(repo, 'config.json')
+    except Exception:
+        pass
