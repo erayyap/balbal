@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- The README points to the models' new license, balbal Community License 1.1: small businesses may also build and sell speech
+  products on balbal-v2 and balbal-v2-manas, with a visible "Powered by balbal" credit. No code changes; model files and output are
+  unchanged from 0.3.0.
+
 ## 0.3.0
 
 - Models trained on the balbal architectures, in any language, load by Hugging Face repo id or folder:
