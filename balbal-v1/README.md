@@ -8,9 +8,9 @@ This repository holds the inference, text normalization and training code of **b
 recognition model.
 
 > **Weights are on Hugging Face:** [erayyapagci/balbal-v1](https://huggingface.co/erayyapagci/balbal-v1) (model, tokenizer,
-> KenLM), under the [balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE): free for
-> research and non-commercial use, and for small businesses' own commercial use; selling speech recognition products built on
-> it needs a commercial license. The code loads the weights from a folder (`MODEL_DIR`).
+> KenLM), under the [balbal Community License 1.1](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE): free for
+> research and non-commercial use, and for small businesses' commercial use, including speech products that show
+> "Powered by balbal"; larger companies need a separate license. The code loads the weights from a folder (`MODEL_DIR`).
 
 ## Architecture
 
@@ -263,9 +263,9 @@ If you use balbal-v1 in your work, you can cite it as:
 
 The code is licensed under the [Apache License 2.0](../LICENSE) (Copyright 2026 Eray Yapağcı). The license covers only the
 code in this repository. The model weights, tokenizer and language model are released separately under the
-[balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE) on
+[balbal Community License 1.1](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE) on
 [Hugging Face](https://huggingface.co/erayyapagci/balbal-v1): free for research and non-commercial use, and for small
-businesses' own commercial use; selling speech recognition products built on them needs a commercial license. Third-party
+businesses' commercial use, including speech products that show "Powered by balbal"; larger companies need a separate license. Third-party
 licenses: `inference/licenses/` (flashlight-text, KenLM).
 
 ---
@@ -277,7 +277,7 @@ licenses: `inference/licenses/` (flashlight-text, KenLM).
 Sonuçlar: FLEURS tr test **6.54 WER** (balbal-normalizer), Mu-Bench tr-TR **11.93 WER** (resmi puanlama).
 
 Ağırlıklar Hugging Face'te: [erayyapagci/balbal-v1](https://huggingface.co/erayyapagci/balbal-v1)
-([balbal Community License 1.0](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE)). `inference/` çıkarım
+([balbal Community License 1.1](https://huggingface.co/erayyapagci/balbal-v1/blob/main/LICENSE)). `inference/` çıkarım
 (PyTorch ve ONNX), kelime zaman damgaları, kelime önceliği (`--hotwords`) ve canlı yazıya dökme (`streaming.py`) içerir;
 `steering/` yönlendirme, `normalizer/` Türkçe normalizasyon ve puanlama, `training/` eğitim kodudur. Kullanım ayrıntıları
 yukarıdaki İngilizce bölümlerde. Kod Apache 2.0 lisanslıdır.

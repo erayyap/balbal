@@ -161,4 +161,4 @@ with; `revision='main'` takes the latest upload.
 - Weights: [erayyapagci/balbal-v2](https://huggingface.co/erayyapagci/balbal-v2), [erayyapagci/balbal-v2-manas](https://huggingface.co/erayyapagci/balbal-v2-manas)
 - Code (inference, streaming, training): https://github.com/erayyap/balbal
 
-The code is Apache-2.0. The model weights have their own license (balbal Community License 1.0, on the model pages).
+The code is Apache-2.0. The model weights have their own license (balbal Community License 1.1, on the model pages).
