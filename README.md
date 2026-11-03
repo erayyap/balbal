@@ -21,7 +21,11 @@ This repository holds the code; the weights are on Hugging Face. Benchmarks, a b
 ```bash
 pip install balbal                            # Linux x86-64, Python 3.11 or 3.12
 balbal run speech.wav                         # balbal-v2; the model downloads from Hugging Face on the first run
-balbal run --model manas --json speech.mp3    # balbal-v2-manas; text + per-word timestamps
+balbal run --model manas --json speech.mp3    # balbal-v2-manas; text + per-word timestamps and confidences
+balbal run -f srt -o subs/ videos/            # subtitles for every audio / video file in a folder
+pip install 'balbal[live]';    balbal live     # live microphone transcription
+pip install 'balbal[server]';  balbal serve    # OpenAI-compatible API + live WebSocket
+pip install 'balbal[wyoming]'; balbal wyoming  # speech-to-text for Home Assistant
 ```
 
 ```python
@@ -52,7 +56,7 @@ training/
   soup.py            weight soups
   build_lm.py        6-gram token KenLM for the decoder
 requirements/        cpu.txt (inference without torch), full.txt (export, torch runtime, training)
-pypi/                the pip package (balbal run, balbal.transcribe; Hugging Face download) and its manylinux wheel build
+pypi/                the pip package (balbal run / live / serve / wyoming; Hugging Face download), its tests and manylinux wheel build
 balbal-v1/           balbal-v1 code, kept for reproducibility
 ```
 

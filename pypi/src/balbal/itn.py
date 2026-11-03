@@ -85,8 +85,14 @@ def itn_text(text):
 
 
 def itn_words(words):
-    """itn_text over timed words [{'word', 'start', 'end'}]: a number run becomes one entry spanning its words."""
-    return [dict(words[i], word=tok, end=words[j - 1]['end']) for tok, i, j in _itn_runs([w['word'] for w in words])]
+    """itn_text over timed words [{'word', 'start', 'end'(, 'confidence')}]: a number run becomes one entry spanning its words (with
+    the lowest confidence of them)."""
+    out = []
+    for tok, i, j in _itn_runs([w['word'] for w in words]):
+        w = dict(words[i], word=tok, end=words[j - 1]['end'])
+        if j - i > 1 and 'confidence' in w: w['confidence'] = min(x['confidence'] for x in words[i:j])
+        out.append(w)
+    return out
 
 
 def _itn_runs(toks):

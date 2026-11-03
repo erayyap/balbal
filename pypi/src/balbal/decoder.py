@@ -48,7 +48,11 @@ class KenLMDecoder:
 
     def __init__(self, lm_dir, settings, fast=True):
         import sentencepiece as spm
-        from flashlight.lib.text.decoder import KenLM, ZeroLM
+        from flashlight.lib.text.decoder import ZeroLM
+        try:
+            from flashlight.lib.text.decoder.kenlm import KenLM
+        except ImportError:
+            from flashlight.lib.text.decoder import KenLM
         from flashlight.lib.text.dictionary import Dictionary
         try:
             from ._native.ctc_lm_bonus import HotwordLM, TokenBonusLM
@@ -125,7 +129,8 @@ class KenLMDecoder:
         return self.decode_words(log_probs, hotwords)['text']
 
     def decode_words(self, log_probs, hotwords=None, offset_seconds=0.):
-        """Best transcript plus per-word timestamps: {'text', 'words': [{'word', 'start', 'end'}]} (seconds, shifted by offset_seconds).
+        """Best transcript plus per-word timestamps and confidences: {'text', 'words': [{'word', 'start', 'end', 'confidence'}]} (seconds,
+        shifted by offset_seconds; confidence in [0, 1], see word_timing).
 
         hotwords: optional list of words/names expected in the audio (e.g. ['Eray', 'Hasan']). Tokens that extend a hotword earn
         `hotword_bonus` (decoder.json) per character; the bonus is taken back if the word is not completed, so only whole hotwords
@@ -148,5 +153,7 @@ class KenLMDecoder:
             decoder = hot[1]
         path = decoder(a)
         # Collapse adjacent repeats before removing blanks: a blank separates repeated tokens. Frames back to the original grid.
-        spans = [(t, int(kept[f0]), int(kept[f1])) for t, f0, f1 in token_spans(path, self.vocab_size)]
-        return dict(text=self.sp.decode([t for t, _, _ in spans]), words=words_from_spans(spans, self.sp, offset_seconds))
+        rows = token_spans(path, self.vocab_size)
+        confidences = [math.exp(float(a[f0:f1 + 1, t].max())) for t, f0, f1 in rows]   # calibrated posterior at the token's peak
+        spans = [(t, int(kept[f0]), int(kept[f1])) for t, f0, f1 in rows]
+        return dict(text=self.sp.decode([t for t, _, _ in spans]), words=words_from_spans(spans, self.sp, offset_seconds, confidences))

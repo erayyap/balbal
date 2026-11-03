@@ -1,0 +1,58 @@
+name: pypi package
+
+on:
+  push:
+    paths: ['pypi/**', 'inference/kernels/**', 'inference/native/**', '.github/workflows/pypi.yml']
+  pull_request:
+    paths: ['pypi/**', 'inference/kernels/**', 'inference/native/**', '.github/workflows/pypi.yml']
+  workflow_dispatch:
+
+jobs:
+  wheels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the manylinux wheels (cp311, cp312)
+        run: docker run --rm -v "$PWD":/io -w /io/pypi quay.io/pypa/manylinux_2_28_x86_64 ./build_wheels.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels
+          path: pypi/wheelhouse/*.whl
+
+  test:
+    needs: wheels
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.12']
+    defaults:
+      run:
+        working-directory: pypi
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels
+          path: wheels
+      - name: Install the wheel
+        run: |
+          tag=cp$(echo "${{ matrix.python }}" | tr -d .)
+          pip install "$(ls ../wheels/balbal-*-$tag-$tag-*.whl)[server,wyoming]" pytest httpx
+      - name: Unit tests
+        run: pytest -q tests
+      - name: Cache the model files
+        if: matrix.python == '3.12'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/balbal-models
+          key: balbal-models-${{ hashFiles('pypi/src/balbal/hub.py') }}
+      - name: Model tests (balbal-v2)
+        if: matrix.python == '3.12'
+        env:
+          BALBAL_TEST_MODELS: '1'
+          BALBAL_CACHE: ~/.cache/balbal-models
+          BALBAL_THREADS: '2'
+        run: pytest -q tests/test_model.py

@@ -14,6 +14,7 @@ The KenLM search then runs over that, so no word is split at a window edge and t
 pieces of about SEGMENT_SECONDS, cut in the middle of the longest confident-blank (silent) run near the end of each piece, so memory stays
 bounded. overlap_seconds=0 gives the old behaviour: fixed chunks, each decoded on its own.
 The models write numbers as words; transcribe() turns spoken number runs into digits (ITN) unless itn=False.
+Live audio: Model.stream() (balbal.streaming).
 """
 from __future__ import annotations
 import json
@@ -37,6 +38,9 @@ SEGMENT_SECONDS = 300.
 # (window, overlap) seconds per model, chosen on real long recordings (12 whole phone channels, 3.9 h; WER, fixed 30 s chunks ->
 # stitched): balbal-v2 22.31 -> 21.63 (15 s / 3 s: 23.06; 20 s / 8 s: 22.04), manas 19.38 -> 19.11 (30 s / 5 s: 19.02).
 SINGLE_PASS_SECONDS = 30.   # clips up to this length are never windowed
+# No word at or above this confidence -> result['no_speech']. On 38 hand-checked phone clips + synthetic silence / noise / tones /
+# clicks: every speech clip has a word >= 0.26, non-speech input stays <= 0.10 (the models can write a short word over digital silence).
+NO_SPEECH_CONFIDENCE = 0.15
 LONG_WINDOWS = {'balbal-v2': (30., 10.), 'balbal-v2-manas': (30., 10.)}
 
 
@@ -163,7 +167,10 @@ class Model:
         return dict(text=' '.join(texts), words=words, acoustic_seconds=acoustic, decoder_seconds=decoding)
 
     def transcribe(self, audio, sample_rate=None, *, hotwords=None, itn=True, chunk_seconds=None, overlap_seconds=None):
-        """Speech -> {'text', 'words': [{'word', 'start', 'end'}], 'duration_seconds', 'inference_seconds', 'realtime_factor', ...}.
+        """Speech -> {'text', 'words': [{'word', 'start', 'end', 'confidence'}], 'duration_seconds', 'inference_seconds',
+        'realtime_factor', 'no_speech', ...}. confidence: 0-1 per word from the acoustic model (low = likely wrong, see word_timing).
+        no_speech: no word reaches NO_SPEECH_CONFIDENCE (silence, noise, a short word made up over digital silence); the text is
+        left as decoded.
 
         audio        a file path (WAV / FLAC / OGG directly, other formats through FFmpeg) or a waveform array (mono or
                      [samples, channels]) at `sample_rate` (default 16000)
@@ -191,8 +198,20 @@ class Model:
             elapsed = sum(c['acoustic_seconds'] + c['decoder_seconds'] for c in chunks)
             text, words = ' '.join(c['text'] for c in chunks if c['text']), [w for c in chunks for w in c['words']]
         if itn: text, words = itn_text(text), itn_words(words)
-        return dict(text=text, words=words, model=self.model, runtime=self.runtime, duration_seconds=len(wave) / SAMPLE_RATE,
+        no_speech = not any(w.get('confidence', 1.) >= NO_SPEECH_CONFIDENCE for w in words)
+        return dict(text=text, words=words, no_speech=no_speech, model=self.model, runtime=self.runtime, duration_seconds=len(wave) / SAMPLE_RATE,
                     inference_seconds=elapsed, realtime_factor=len(wave) / SAMPLE_RATE / elapsed if elapsed else None)
+
+    def stream(self, mode='segment', *, hotwords=None, itn=True, **options):
+        """A live stream: feed audio pieces with .accept(piece), end with .finish(); both return partial / final text events
+        (see balbal.streaming). mode 'segment' (default) or 'window'; options: chunk, right, endpoint, max_segment (seconds)."""
+        from .streaming import LiveStream
+        return LiveStream(self, mode, hotwords, itn, **options)
+
+    def transcribe_stream(self, pieces, mode='segment', *, hotwords=None, itn=True, **options):
+        """Generator of live events for an iterable of audio pieces (float32 or int16, mono, 16 kHz); see stream()."""
+        from .streaming import transcribe_stream
+        return transcribe_stream(self, pieces, mode=mode, hotwords=hotwords, itn=itn, **options)
 
 
 def silence_cut(blank_log_probs, confident=0.99):
