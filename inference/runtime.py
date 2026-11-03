@@ -14,7 +14,7 @@ Runtimes (all CPU unless runtime torch gets device cuda):
   onnx   lean batch-1 graph with standard onnxruntime operators only (no build step besides the decoder)
   torch  the PyTorch/NeMo model (needs torch + NeMo)
 All three give [frames, V + 1] natural-log CTC probabilities (40 ms frames, blank last) to decoder.KenLMDecoder.
-Audio longer than 30 s: overlapping windows (LONG_WINDOWS: balbal-v2 15 s / 3 s overlap, manas 30 s / 10 s); each window keeps only
+Audio longer than 30 s: overlapping windows (LONG_WINDOWS: 30 s windows, 10 s overlap); each window keeps only
 the frames up to the middle of its overlaps (its edge frames saw little context), and since CTC frames sit on a fixed 40 ms grid the
 kept frames join into one emission matrix for the whole file.
 The KenLM search then runs over that, so no word is split at a window edge and the LM context carries on. Very long files are decoded in
@@ -42,10 +42,10 @@ OPS_LIB = Path(os.getenv('BALBAL_OPS_LIB', HERE / 'kernels/libbalbal_ops.so'))
 MIN_SAMPLES = 4000   # the convolutional subsampler needs at least 0.25 s
 HOP = 640            # samples per output frame (10 ms hop x 4 subsampling): frame j of a window at sample s = file frame s / HOP + j
 SEGMENT_SECONDS = 300.
-# (window, overlap) seconds per model, chosen 2026-10-30 on the 721 DEV clips joined into 49 files of ~2.5 min (WER, fixed 30 s chunks ->
-# stitched): balbal-v2 11.02 -> 9.64 (30 s / 5 s: 10.03), manas 8.61 -> 7.84 (30 s / 5 s: 8.15; 15 s / 3 s: 8.82).
+# (window, overlap) seconds per model, chosen on real long recordings (12 whole phone channels, 3.9 h; WER, fixed 30 s chunks ->
+# stitched): balbal-v2 22.31 -> 21.63 (15 s / 3 s: 23.06; 20 s / 8 s: 22.04), manas 19.38 -> 19.11 (30 s / 5 s: 19.02).
 SINGLE_PASS_SECONDS = 30.   # clips up to this length are never windowed
-LONG_WINDOWS = {'balbal-v2': (15., 3.), 'balbal-v2-manas': (30., 10.)}
+LONG_WINDOWS = {'balbal-v2': (30., 10.), 'balbal-v2-manas': (30., 10.)}
 
 
 def model_name(model_dir, name=None):
