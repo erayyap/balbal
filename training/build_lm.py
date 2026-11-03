@@ -3,11 +3,12 @@
 
 Tokens are the acoustic model's SentencePiece pieces (piece id i written as the character chr(i + 100)), so the LM
 scores exactly the decoder's tokens. Recipe: whitespace-normalised text, each (id, pcm_sha256) once; rows whose
-normalize_turkish(text) equals any held-out text (dev/test/control manifests) are excluded; lmplz -o 6 -S 4G
+exact-text key equals that of any held-out text (dev/test/control manifests) are excluded (the key follows --language:
+normalize_turkish for tr, lowercase without punctuation for other languages; balbal.lang); lmplz -o 6 -S 4G
 --discount_fallback --prune 0 0 1 1 2 2; build_binary trie; ARPA vs binary parity probe (< 1e-4).
 Needs KenLM's lmplz and build_binary (https://github.com/kpu/kenlm; set KENLM_BIN to their directory) and the kenlm module.
   python training/build_lm.py --tokenizer TOKENIZER_DIR/tokenizer.model --train a.jsonl b.jsonl --heldout dev.jsonl test.jsonl \
-      --out MODEL_DIR/lm [--scratch DIR]
+      --out MODEL_DIR/lm [--scratch DIR] [--language az]
 Writes OUT/model.binary, OUT/tokenizer.model, OUT/complete.json.
 """
 import argparse
@@ -46,15 +47,17 @@ def main():
     p.add_argument('--out', type=Path, required=True)
     p.add_argument('--scratch', type=Path, default=None, help='temporary dir for the corpus/ARPA (needs several GB)')
     p.add_argument('--memory', default='4G', help='lmplz -S')
+    p.add_argument('--language', default='tr', help='language code whose text key matches held-out sentences (default tr)')
     args = p.parse_args()
     import kenlm
     import sentencepiece as spm
-    from balbal.normalizer.turkish import normalize_turkish
+    from balbal import lang
+    key = lang.get(args.language).text_key   # the held-out matching key (Turkish: normalize_turkish)
     tools = Path(os.getenv('KENLM_BIN', ''))
     tool = lambda name: str(tools / name) if str(tools) else (shutil.which(name) or name)
     args.out.mkdir(parents=True, exist_ok=True)
     sp = spm.SentencePieceProcessor(model_file=str(args.tokenizer))
-    blocked = {normalize_turkish(r['text']) for path in args.heldout for r in rows(path)}
+    blocked = {key(r["text"]) for path in args.heldout for r in rows(path)}
     scratch = Path(tempfile.mkdtemp(prefix='kenlm-', dir=args.scratch)); corpus = scratch / 'corpus.txt'
     counts, excluded, seen, probes, token_count = Counter(), Counter(), set(), [], 0
     try:
@@ -64,7 +67,7 @@ def main():
                     ident = (row['id'], row.get('pcm_sha256'))
                     if ident in seen: continue
                     seen.add(ident); text = ' '.join(row['text'].split()); source = row.get('source', '?')
-                    if not text or normalize_turkish(text) in blocked: excluded[source] += 1; continue
+                    if not text or key(text) in blocked: excluded[source] += 1; continue
                     ids = sp.encode(text)
                     if not ids or sp.unk_id() in ids: raise ValueError('Unrepresentable LM target: ' + row['id'])
                     encoded = ' '.join(chr(i+100) for i in ids); target.write(encoded + '\n')
@@ -73,7 +76,7 @@ def main():
             for path in args.text:
                 for line in open(path, encoding='utf-8'):
                     text = ' '.join(line.split())
-                    if not text or normalize_turkish(text) in blocked: excluded[path.name] += 1; continue
+                    if not text or key(text) in blocked: excluded[path.name] += 1; continue
                     ids = sp.encode(text)
                     if not ids or sp.unk_id() in ids: excluded[path.name] += 1; continue
                     encoded = ' '.join(chr(i+100) for i in ids); target.write(encoded + '\n')

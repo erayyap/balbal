@@ -6,6 +6,7 @@
   balbal run --format srt -o subs/ videos/   one subtitle file per audio / video file of a folder (txt, json, srt, vtt)
   balbal run --jobs 4 -o out/ calls/         four processes at once (CPU threads are split between them)
   balbal run --hotwords "Eray,Hasan" call.wav
+  balbal run --model owner/name speech.wav   a model trained on a balbal architecture (Hugging Face repo id or local folder)
   balbal download [--model manas]            fetch the model files now (e.g. while building an image)
   balbal live [--model manas]                live microphone transcription (pip install 'balbal[live]')
   balbal live --file speech.wav              a file played as if live (partial + final text as it is heard)
@@ -25,9 +26,10 @@ COMMANDS = ('run', 'download', 'live', 'serve', 'wyoming')
 
 
 def model_options(p):
-    p.add_argument('--model', '-m', default='balbal-v2', help=f'{" or ".join(MODELS)} (short: v2, manas); default balbal-v2')
+    p.add_argument('--model', '-m', default='balbal-v2',
+                   help=f'{" or ".join(MODELS)} (short: v2, manas), a model folder or a Hugging Face repo id owner/name; default balbal-v2')
     p.add_argument('--runtime', choices=RUNTIMES, default='fast', help='fast (custom kernels, default) or onnx (standard operators)')
-    p.add_argument('--revision', default=None, help='Hugging Face revision (default: the tested one; main = latest)')
+    p.add_argument('--revision', default=None, help='Hugging Face revision (default: the tested one, main for other repos)')
 
 
 def main(argv=None):
@@ -42,7 +44,7 @@ def main(argv=None):
     r.add_argument('--model-dir', type=Path, default=None, help='a local model directory instead of the download')
     r.add_argument('--threads', '-t', type=int, default=None, help='CPU threads (default: BALBAL_THREADS, else min(8, CPU count))')
     r.add_argument('--hotwords', default='', help='comma-separated names / words to favour, e.g. "Eray,Hasan"')
-    r.add_argument('--no-itn', action='store_true', help='keep numbers as spoken words (default: digits)')
+    r.add_argument('--no-itn', action='store_true', help='keep numbers as spoken words (default: digits, for Turkish models)')
     r.add_argument('--json', action='store_true', help='one JSON line per file (text, words with start/end seconds, timings)')
     r.add_argument('--format', '-f', choices=('txt', 'json', 'srt', 'vtt'), default='txt', help='output format (default txt)')
     r.add_argument('--output-dir', '-o', type=Path, default=None, help='write one file per input here (folder structure kept)')
@@ -59,7 +61,7 @@ def main(argv=None):
     lv.add_argument('--device', default=None, help='input device (number or name part; python -m sounddevice lists them)')
     lv.add_argument('--mode', choices=('segment', 'window'), default='segment', help='streaming mode (default segment)')
     lv.add_argument('--hotwords', default='', help='comma-separated names / words to favour, e.g. "Eray,Hasan"')
-    lv.add_argument('--no-itn', action='store_true', help='keep numbers as spoken words (default: digits)')
+    lv.add_argument('--no-itn', action='store_true', help='keep numbers as spoken words (default: digits, for Turkish models)')
     lv.add_argument('--json', action='store_true', help='every event (partial / final) as a JSON line')
     lv.add_argument('--timestamps', action='store_true', help='start and end seconds before every final segment')
     lv.add_argument('--transcript', action='store_true', help='print the whole transcript at the end')
@@ -69,7 +71,8 @@ def main(argv=None):
         lv.add_argument('--' + name, type=float, default=None, help=text)
     s = sub.add_parser('serve', help="OpenAI-compatible server: POST /v1/audio/transcriptions (pip install 'balbal[server]')")
     s.add_argument('--model', '-m', action='append', default=None,
-                   help='model(s) to serve, repeatable; the first is the default (OpenAI names like whisper-1 map to it)')
+                   help='model(s) to serve (name, folder or repo id), repeatable; the first is the default (OpenAI names like whisper-1 '
+                        'map to it)')
     s.add_argument('--runtime', choices=RUNTIMES, default='fast', help='fast (custom kernels, default) or onnx (standard operators)')
     s.add_argument('--host', default=os.getenv('BALBAL_HOST', '127.0.0.1'),
                    help='bind address (default: BALBAL_HOST, else 127.0.0.1; 0.0.0.0 for all interfaces)')
@@ -81,14 +84,15 @@ def main(argv=None):
     s.add_argument('--queue', type=int, default=16, help='requests allowed to wait for a worker before 503 (default 16)')
     s.add_argument('--max-streams', type=int, default=8, help='live WebSocket streams open at once (default 8)')
     y = sub.add_parser('wyoming', help="speech-to-text for Home Assistant over the Wyoming protocol (pip install 'balbal[wyoming]')")
-    y.add_argument('--model', '-m', action='append', default=None, help='model(s) to serve, repeatable; the first is the default')
+    y.add_argument('--model', '-m', action='append', default=None,
+                   help='model(s) to serve (name, folder or repo id), repeatable; the first is the default')
     y.add_argument('--runtime', choices=RUNTIMES, default='fast', help='fast (custom kernels, default) or onnx (standard operators)')
     y.add_argument('--uri', default='tcp://0.0.0.0:10300', help='listen address (default tcp://0.0.0.0:10300)')
     y.add_argument('--workers', type=int, default=1, help='concurrent transcriptions; each worker loads its own model copy')
     y.add_argument('--threads', '-t', type=int, default=None, help='CPU threads per worker (default: CPU threads / workers, up to 8)')
     y.add_argument('--hotwords', default='', help='comma-separated names / words to favour in every command, e.g. "salon,mutfak"')
     y.add_argument('--use-ha-names', action='store_true', help='also favour the names / terms Home Assistant sends with a request')
-    y.add_argument('--no-itn', action='store_true', help='keep numbers as spoken words (default: digits)')
+    y.add_argument('--no-itn', action='store_true', help='keep numbers as spoken words (default: digits, for Turkish models)')
     y.add_argument('--keep-no-speech', action='store_true', help='return the text of commands without confident speech (default: empty)')
     args = p.parse_args(argv)
 

@@ -53,6 +53,24 @@ recordings, wrong words average about 0.4 and correct words about 0.85. `no_spee
 (silence, noise, or a short word written over digital silence); the text is left as decoded. Audio longer than 30 s is read in overlapping windows whose
 CTC frames are stitched into one sequence and decoded in one KenLM pass, so no word is cut at a window edge. One `Model` per thread.
 
+## Models in other languages
+
+Models trained on the balbal architectures with the [GitHub code](https://github.com/erayyap/balbal#other-languages) load the same
+way, by Hugging Face repo id or local folder:
+
+```python
+model = balbal.load('owner/name')               # or balbal.load('path/to/model-folder')
+```
+
+```bash
+balbal run --model owner/name speech.wav
+```
+
+The repo or folder needs `model.json`, `lm/` and `onnx/` (exported with `inference/export_onnx.py`); `decoder.json` there replaces the
+default decoder settings. `model.json` names the architecture and the languages, e.g.
+`{"model": "balbal-v2-manas", "name": "my-model", "languages": ["az"]}`. Spoken numbers become digits only for languages with a
+number writer (Turkish); other languages keep the words the model writes.
+
 ## Live transcription
 
 ```bash

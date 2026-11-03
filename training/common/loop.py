@@ -1,14 +1,15 @@
 """Training loop shared by training/balbal_v2/train.py and training/manas/train.py (the recipes set the defaults).
 
 Objective per micro-batch: 0.3 x CTC(base encoder output) + 0.7 x mean over the 3 refiner passes of CTC(pass output)
-  + lang_w x frame-level language cross-entropy (tr / en / non-speech; unlabelled frames ignored). bf16 autocast on CUDA, losses in fp32.
+  + lang_w x frame-level language cross-entropy (the head's languages + non-speech; unlabelled frames ignored). bf16 autocast on CUDA, losses in fp32.
 Updates: BATCH clips (micro x accumulation x world), length-grouped batches (EpochLengthSampler), batch order shuffled per epoch; only
   full updates (the < BATCH-clip tail of an epoch is skipped). CTC-infeasible rows (tokens + repeats > frames - 2) are dropped up front.
 Optimizer: Muon (hidden linear maps) + AdamW (the rest; memory value table and learned memory temperature at mem_lr_mult x LR, no
   decay), guarded against nonfinite / oversized updates; gradient clip 1.0. --nonfinite-skip N skips up to N updates whose gradient norm
   is not finite (logged), then raises.
 LR: linear warmup over --warmup updates, flat, then linear decay over the last --decay share of the run to --floor x LR.
-Evaluation every --eval-epochs (and at the end): greedy WER / CER (balbal-normalizer scoring) on --dev, overall and per `source`; with
+Evaluation every --eval-epochs (and at the end): greedy WER / CER on --dev, overall and per `source`, scored by the rules of
+  --default-lang (balbal.lang: Turkish = balbal-normalizer, other languages = lowercase without punctuation); with
   --soup w also the weight soup w x current + (1 - w) x init. The --keep best raw checkpoints by the best dev WER (raw or soup) stay in
   OUT/checkpoints (index: best.json).
 Multi-GPU: torchrun --nproc_per_node N (NCCL; gloo on CPU). Each rank takes every world-th micro-batch of the same updates; gradients are
@@ -41,6 +42,9 @@ def arguments(description, defaults):
     p.add_argument('--drop', default='', help='comma-separated id lists to leave out')
     p.add_argument('--relabel', default='', help='comma-separated {"id", "text"} JSON lines replacing texts')
     p.add_argument('--tokenizer-dir', required=True, help='tokenizer.model, tokenizer.vocab, vocab.txt')
+    p.add_argument('--config-dir', type=Path, default=None,
+                   help='folder with your own refiner.json / model_config.yaml (memory size, vocabulary, "languages"); they replace '
+                        'configs/<family>/ and are copied into the run directory')
     p.add_argument('--init', default=None, help='weights to start from')
     p.add_argument('--epochs', type=float, default=defaults['epochs'])
     p.add_argument('--updates', type=int, default=None, help='total updates (overrides --epochs)')
@@ -56,7 +60,8 @@ def arguments(description, defaults):
     p.add_argument('--muon-bf16', action='store_true', default=defaults.get('muon_bf16', False), help='Newton-Schulz matmuls in bf16')
     p.add_argument('--lang-w', type=float, default=.1, help='weight of the frame language cross-entropy (0 = off)')
     p.add_argument('--lang-band', type=int, default=5, help='unscored frames on both sides of a language change')
-    p.add_argument('--default-lang', default='tr', choices=('tr', 'en'), help='language of rows without "lang"')
+    p.add_argument('--default-lang', default=None,
+                   help='language of rows without "lang", and the dev scoring rules (default: the first language of the language head)')
     p.add_argument('--cond', action='store_true', help='train the utterance-level language condition (lang_cond)')
     p.add_argument('--cond-p', type=float, default=.7, help='probability of the true language (else auto) for monolingual clips')
     p.add_argument('--step-offset', type=int, default=defaults['step_offset'],
@@ -74,6 +79,18 @@ def arguments(description, defaults):
     p.add_argument('--tf32', action='store_true')
     p.add_argument('--no-save', action='store_true')
     return p
+
+
+def save_configs(args, name):
+    """Copy the architecture files the run uses (--config-dir or configs/<family>/) into the run directory, so OUT plus a checkpoint,
+    the tokenizer and a KenLM make a model folder (inference/runtime.py, inference/export_onnx.py). Rank 0 only."""
+    import shutil
+    from balbal import models as M
+    if int(os.getenv('RANK', 0)) != 0: return
+    args.out.mkdir(parents=True, exist_ok=True)
+    for f in ('refiner.json', 'model_config.yaml'): shutil.copy2(M.config_path(name, f, args.config_dir), args.out / f)
+    info = dict(model=name, languages=list(M.head_languages(M.refiner_config(name, args.config_dir))))
+    (args.out / 'model.json').write_text(json.dumps(info) + '\n')
 
 
 def allreduce_grads(params, bucket=64 * 2 ** 20):
@@ -126,8 +143,8 @@ def run(args, name, model, head_prefix, separate_head, eval_bf16):
     from torch.nn import functional as F
     from torch.utils.data import DataLoader
     from balbal.model.conformer_extra_objectives import clear_extra
-    from balbal.models import language_head
-    from balbal.normalizer.metrics_v2 import corpus_metrics_v2
+    from balbal import lang as L
+    from balbal.models import HEAD_LANGUAGES, language_head
     from training.common import data as D, fastpath, muon_safe
     from training.common.sampling import EpochLengthSampler
 
@@ -187,6 +204,11 @@ def run(args, name, model, head_prefix, separate_head, eval_bf16):
     soups = [float(w) for w in split(args.soup)]
     init_state = {k: v.detach().clone() for k, v in model.state_dict().items()} if soups else None
     head = language_head(model)
+    languages = tuple(getattr(model, 'balbal_languages', HEAD_LANGUAGES))
+    codes = D.label_codes(languages)
+    args.default_lang = args.default_lang or languages[0]
+    D.label_of(codes, args.default_lang, '--default-lang')
+    scorer = L.get(args.default_lang).score
     if rank == 0 and not args.resume:
         (out / 'config.json').write_text(json.dumps(dict(
             {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, model=name, world=world, subsampling=sub,
@@ -202,7 +224,7 @@ def run(args, name, model, head_prefix, separate_head, eval_bf16):
         if hasattr(model, 'lang_cond'): model._cond_ids = None   # evaluate in auto mode
         torch.backends.cudnn.enabled = True
         for i in range(0, len(dev), 8):
-            ws = [torch.from_numpy(D.materialise(r, args.default_lang)[0]) for r in dev[i:i + 8]]
+            ws = [torch.from_numpy(D.materialise(r, args.default_lang, codes)[0]) for r in dev[i:i + 8]]
             w = torch.nn.utils.rnn.pad_sequence(ws, batch_first=True).to(device); n = torch.tensor([len(x) for x in ws], device=device)
             with torch.autocast(device.type, dtype=torch.bfloat16, enabled=eval_bf16 and device.type == 'cuda'):
                 lp, en, _ = model(input_signal=w, input_signal_length=n)
@@ -210,7 +232,7 @@ def run(args, name, model, head_prefix, separate_head, eval_bf16):
         torch.backends.cudnn.enabled = train_cudnn; model.train()
         groups = defaultdict(list)
         for r, h in zip(dev, hyps): groups[r.get('source', 'dev')].append((r['text'], h))
-        score = lambda items: corpus_metrics_v2([a for a, _ in items], [b for _, b in items])
+        score = lambda items: scorer([a for a, _ in items], [b for _, b in items])
         m, by = score([(r['text'], h) for r, h in zip(dev, hyps)]), {g: score(v) for g, v in sorted(groups.items())}
         return dict(dev_wer=round(100 * m['wer'], 3), dev_cer=round(100 * m['cer'], 3),
                     by_source={g: dict(wer=round(100 * x['wer'], 3), cer=round(100 * x['cer'], 3)) for g, x in by.items()})
@@ -308,7 +330,7 @@ def run(args, name, model, head_prefix, separate_head, eval_bf16):
         epoch = step // epoch_steps; sampler.set_epoch(epoch)
         order = list(sampler)[:epoch_steps * batch][(step % epoch_steps) * batch:]   # full updates only
         workers = D.loader_workers()
-        loader = DataLoader(D.Rows(rows, labels, hop, args.lang_band, args.cond_p, (args.seed, epoch), args.default_lang),
+        loader = DataLoader(D.Rows(rows, labels, hop, args.lang_band, args.cond_p, (args.seed, epoch), args.default_lang, languages),
                             batch_size=micro, sampler=D.RankSlice(order, micro, rank, world), collate_fn=D.collate,
                             num_workers=workers, prefetch_factor=4 if workers else None)
         it = iter(loader)

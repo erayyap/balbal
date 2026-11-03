@@ -9,7 +9,7 @@ import math
 
 FORMATS = ('txt', 'json', 'srt', 'vtt')
 SEGMENT_PAUSE, SEGMENT_SECONDS, SEGMENT_CHARS, LINE_CHARS = 0.6, 7., 84, 42
-SENTENCE_END = ('.', '?', '!', '…')
+SENTENCE_END = ('.', '?', '!', '…', '؟', '。', '？', '！', '।')
 
 
 def group_words(words):

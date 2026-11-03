@@ -10,7 +10,7 @@
                                   model, mode (segment / window), hotwords, itn; api_key (or the Authorization header; a wrong
                                   key refuses the handshake with 403). A refused stream gets {"type": "error", "message"} and is
                                   closed (1008 bad request, 1013 too many streams)
-  GET  /v1/models                 the models this server serves
+  GET  /v1/models                 the models this server serves (--model: registry names, model folders or Hugging Face repo ids)
   GET  /health
   GET  /                          browser microphone demo of /v1/stream (http://HOST:PORT/#key=KEY when an API key is set)
 
@@ -34,7 +34,7 @@ import threading
 from .audio import canonical_audio, read_audio
 from .engine import default_threads, Model
 from .formats import group_words, segments_from_words, to_srt, to_vtt
-from .hub import MODELS, model_name
+from . import hub, lang
 
 OPENAI_NAMES = ('whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'gpt-4o-transcribe-diarize')
 FORMATS = ('json', 'text', 'verbose_json', 'srt', 'vtt')
@@ -62,11 +62,18 @@ def decode_upload(data, filename=''):
 class Pool:
     """Workers x served models; each worker owns its own Model instances and a lock, so one Model never runs in two threads.
     run() takes any free worker and fails fast once `backlog` requests are already waiting; run_on() uses one given worker
-    (live streams stay on the worker whose Model they were made from)."""
+    (live streams stay on the worker whose Model they were made from). models: what to load (registry names, folders, repo ids);
+    self.models: their display names (the keys of a worker), first = default."""
 
     def __init__(self, models, workers, threads, runtime, backlog):
-        self.models, self.backlog = list(models), backlog
-        self.workers = [{name: Model(name, runtime, threads) for name in self.models} for _ in range(workers)]
+        self.backlog, first = backlog, {}
+        for source in models:
+            m = Model(source, runtime, threads)
+            if m.model in first: raise ValueError(f'two served models are both named {m.model!r}')
+            first[m.model] = m
+        self.models = list(first)
+        self.loaded = first
+        self.workers = [first] + [{name: Model(m.source, m.runtime, threads) for name, m in first.items()} for _ in range(workers - 1)]
         self.locks = [threading.Lock() for _ in self.workers]
         self.free = queue.Queue()
         for i in range(len(self.workers)): self.free.put(i)
@@ -92,6 +99,24 @@ class Pool:
     def next_worker(self):
         return next(self.turn) % len(self.workers)
 
+    def lookup(self, model):
+        """The served model a request names: '' / an OpenAI name -> the default; a display name, registry name or alias, folder or
+        repo id of a served model -> its name. ValueError otherwise."""
+        if not model or model in OPENAI_NAMES: return self.models[0]
+        if model in self.loaded: return model
+        try:
+            where = str(hub.resolve(model)[1])
+        except ValueError:
+            where = None
+        for name, m in self.loaded.items():
+            if where is not None and where == m.source: return name
+        raise ValueError(f'model {model} is not served here (served: {", ".join(self.models)})')
+
+    def language_name(self, name):
+        """OpenAI-style language of a served model: its language's name, 'auto' for a multilingual model."""
+        languages = self.loaded[name].languages
+        return 'auto' if len(languages) > 1 else lang.NAMES.get(lang.code(languages[0]), languages[0])
+
 
 class BusyError(Exception):
     pass
@@ -107,11 +132,11 @@ def create_app(models=('balbal-v2',), workers=1, threads=None, runtime='fast', a
         raise SystemExit("balbal serve needs the server extra: pip install 'balbal[server]'")
     from . import __version__
 
-    models = [model_name(m) for m in models] or ['balbal-v2']
-    default = models[0]
+    sources = [str(m) for m in models] or ['balbal-v2']
     threads = threads or max(1, default_threads() // workers)
-    print(f'balbal: loading {", ".join(models)} ({workers} worker(s) x {threads} thread(s), {runtime} runtime)', file=sys.stderr, flush=True)
-    pool = Pool(models, workers, threads, runtime, backlog)
+    print(f'balbal: loading {", ".join(sources)} ({workers} worker(s) x {threads} thread(s), {runtime} runtime)', file=sys.stderr, flush=True)
+    pool = Pool(sources, workers, threads, runtime, backlog)
+    models, default = pool.models, pool.models[0]
     app = FastAPI(title='balbal', version=__version__)
 
     def error(status, message, kind='invalid_request_error', code=None, headers=None):
@@ -144,11 +169,9 @@ def create_app(models=('balbal-v2',), workers=1, threads=None, runtime='fast', a
         if any(g not in ('word', 'segment') for g in granularities):
             return error(400, 'timestamp_granularities must be word and/or segment', code='invalid_value')
         try:
-            name = default if model in OPENAI_NAMES or not model else model_name(model)
+            name = pool.lookup(model)
         except ValueError as e:
             return error(400, str(e), code='model_not_found')
-        if name not in models:
-            return error(400, f'model {name} is not served here (served: {", ".join(models)})', code='model_not_found')
         data = await file.read(max_bytes + 1)
         if len(data) > max_bytes:
             return error(413, f'file larger than {max_bytes >> 20} MB', code='file_too_large')
@@ -171,7 +194,7 @@ def create_app(models=('balbal-v2',), workers=1, threads=None, runtime='fast', a
             return PlainTextResponse(to_vtt(segments), media_type='text/vtt')
         if response_format == 'json':
             return {'text': text}
-        body = {'task': 'transcribe', 'language': language or ('turkish' if name == 'balbal-v2' else 'auto'),
+        body = {'task': 'transcribe', 'language': language or pool.language_name(name),
                 'duration': result['duration_seconds'], 'text': text}
         if 'word' in granularities:   # OpenAI's word fields + balbal's confidence (clients ignore unknown fields)
             body['words'] = [dict(word=w['word'], start=w['start'], end=w['end'], confidence=w.get('confidence')) for w in result['words']]
@@ -196,8 +219,7 @@ def create_app(models=('balbal-v2',), workers=1, threads=None, runtime='fast', a
             await ws.send_json(dict(type='error', message=message))
             await ws.close(code=code, reason=message[:120])
         try:
-            name = default if q.get('model') in OPENAI_NAMES or not q.get('model') else model_name(q['model'])
-            if name not in models: raise ValueError(f'model {name} is not served here (served: {", ".join(models)})')
+            name = pool.lookup(q.get('model'))
             mode = q.get('mode', 'segment')
             if mode not in ('segment', 'window'): raise ValueError('mode must be segment or window')
         except ValueError as e:

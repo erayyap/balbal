@@ -20,7 +20,8 @@ DEFAULTS = dict(epochs=5., batch=64, micro=16, lr=1.4e-4, warmup=500, decay=.2, 
 def main():
     args = loop.arguments(__doc__, DEFAULTS).parse_args()
     from balbal import models as M
-    model = M.build_model('balbal-v2', args.tokenizer_dir)
+    model = M.build_model('balbal-v2', args.tokenizer_dir, model_dir=args.config_dir)
+    loop.save_configs(args, 'balbal-v2')
     report = load_init(model, 'balbal-v2', args.init, args.cond)
     print('INIT', report, flush=True)
     loop.run(args, 'balbal-v2', model, head_prefix=M.LANG_HEAD['balbal-v2'], separate_head=True, eval_bf16=False)

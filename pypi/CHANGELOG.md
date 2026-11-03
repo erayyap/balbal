@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0
+
+- Models trained on the balbal architectures, in any language, load by Hugging Face repo id or folder:
+  `balbal.load('owner/name')`, `balbal run --model owner/name`, `balbal serve --model ./my-model`. They need `model.json`, `lm/`
+  and `onnx/` (exported with `inference/export_onnx.py` from the GitHub repo); a `decoder.json` in the model replaces the default
+  decoder settings.
+- `model.json` may name the model's `languages` (primary first), its `itn` and `long_windows`. Number writing (ITN) and hotword casing
+  follow the primary language: Turkish keeps its ITN, other languages keep numbers as the model writes them.
+- The servers take model names, folders and repo ids; Wyoming routes a request's language to a served model with that language.
+- Subtitles end segments at `؟ 。 ？ ！ ।` too; word timing treats `« » „ ¿ ¡ ، ؟ ؛ 。 、` as punctuation.
+- The output of balbal-v2 and balbal-v2-manas is unchanged from 0.2.0 (text, timings, confidence).
+
 ## 0.2.0
 
 - Live transcription: `model.stream()` / `model.transcribe_stream()` give partial and final text while audio arrives, using the

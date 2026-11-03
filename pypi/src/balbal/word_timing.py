@@ -12,6 +12,9 @@ wrong words with AUC 0.88 (balbal-v2) / 0.87 (manas); wrong words average ~0.4, 
 FRAME = 0.04
 LEAD, TAIL, JOIN, MAX_GAP = 1, 5, 12, 8
 PUNCT = set('.,?!:;"\'“”‘’()-…')
+# Other scripts' punctuation (none of these is a piece of the balbal-v2 / manas vocabularies, whose output is unchanged; '%', '/',
+# '&', '#', '_' and dashes other than '-' stay word content).
+PUNCT |= set('«»„‚‹›¿¡،؟؛。、！？：；')
 
 
 def token_spans(path, vocab_size):

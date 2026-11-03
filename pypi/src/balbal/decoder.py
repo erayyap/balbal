@@ -46,7 +46,8 @@ def prepare(array, settings):
 class KenLMDecoder:
     """CPU decoder; reuse one instance per thread/process."""
 
-    def __init__(self, lm_dir, settings, fast=True):
+    def __init__(self, lm_dir, settings, fast=True, language=None):
+        """language: a balbal.lang.Language whose casing makes the hotword variants (default Turkish)."""
         import sentencepiece as spm
         from flashlight.lib.text.decoder import ZeroLM
         try:
@@ -61,6 +62,10 @@ class KenLMDecoder:
             raise ImportError('The native decoder of this balbal wheel did not load (Linux x86-64, Python 3.11-3.12 builds).') from error
         lm_dir = Path(lm_dir)
         self.settings, self.fast = dict(settings), fast
+        if language is None:
+            from . import lang
+            language = lang.get('tr')
+        self.language = language
         s = self.settings
         self.sp = spm.SentencePieceProcessor(model_file=str(lm_dir / 'tokenizer.model'))
         self.vocab_size = self.sp.vocab_size()
@@ -95,10 +100,9 @@ class KenLMDecoder:
 
     def hotword_sequences(self, words, bonus_per_char):
         """Token sequences for hotword biasing: every vocabulary segmentation (up to 64) of each word as written,
-        lowercased and capitalized (Turkish dotted/dotless i), so a word earns its bonus however the model spells it.
-        Each token's bonus is bonus_per_char x its characters (word-start marker included); phrases are split into words."""
-        lower = lambda w: w.replace('I', 'ı').replace('İ', 'i').lower()
-        upper1 = lambda w: (w[0].replace('i', 'İ').replace('ı', 'I').upper() + w[1:]) if w else w
+        lowercased and capitalized (the language's casing: Turkish dotted/dotless i for tr / az), so a word earns its bonus however the
+        model spells it. Each token's bonus is bonus_per_char x its characters (word-start marker included); phrases are split into words."""
+        lower, upper1 = self.language.lower, self.language.capitalize
         seqs = set()
         for phrase in words:
             for word in str(phrase).split():

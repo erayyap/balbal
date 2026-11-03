@@ -6,15 +6,17 @@ Manifest rows (JSON lines; your own data):
       a virtual row: segments joined on the fly (start / end in 16 kHz samples, gap_before = seconds of zeros before the part)
 optional fields:
   "pcm_sha256"   sha256 of the canonical PCM16 samples (balbal.audio.pcm_hash); checked when present (row or part)
-  "lang"         "tr" | "en" | "ns" (non-speech); default: "ns" for an empty text, else --default-lang
+  "lang"         a language of the model's language head ("tr" | "en" by default; refiner.json "languages") or "ns" (non-speech);
+                 default: "ns" for an empty text, else --default-lang
   "lang_spans"   [[start_s, end_s, "en"], ...]: stretches in another language inside the row (code-switching)
   "source"       a group name for the per-source dev scores
 An empty "text" is a non-speech clip (CTC target = no tokens).
 
-Language labels (language head): every frame gets tr 0 / en 1 / non-speech 2 from the row / part / span language at the frame centre;
-`band` frames on both sides of a language change and the gap_before zeros are not scored (-100).
-Condition (models with lang_cond): per clip tr / en if only that language is labelled (with probability cond_p, else auto), auto for
-code-switched or non-speech clips.
+Language labels (language head): every frame gets its language's class (the head's languages in order, then non-speech; default
+tr 0 / en 1 / non-speech 2) from the row / part / span language at the frame centre; `band` frames on both sides of a language change
+and the gap_before zeros are not scored (-100).
+Condition (models with lang_cond): per clip the language's id if only one language is labelled (with probability cond_p, else auto),
+auto for code-switched or non-speech clips.
 """
 import json
 import os
@@ -25,8 +27,26 @@ from torch.utils.data import Dataset, Sampler
 
 from balbal.audio import pcm_hash, read_audio
 
-TR, EN, NS, IGNORE = 0, 1, 2, -1
-CODE = {'tr': TR, 'en': EN, 'ns': NS, 'non-speech': NS, 'nonspeech': NS}
+NS_CODES = ('ns', 'non-speech', 'nonspeech')
+IGNORE = -1
+
+
+def label_codes(languages=('tr', 'en')):
+    """Language code -> language-head class: the languages in order, then non-speech (every NS_CODES spelling)."""
+    codes = {lang: i for i, lang in enumerate(languages)}
+    return dict(codes, **{c: len(languages) for c in NS_CODES})
+
+
+def label_of(codes, lang, row_id):
+    try:
+        return codes[lang]
+    except KeyError:
+        raise ValueError(f'row {row_id}: language {lang!r} is not one of the language head\'s '
+                         f'{sorted(c for c in codes if c not in NS_CODES)} (or ns); set refiner.json "languages"') from None
+
+
+CODE = label_codes()
+TR, EN, NS = CODE['tr'], CODE['en'], CODE['ns']
 COND_TR, COND_EN, COND_AUTO = 0, 1, 2
 
 
@@ -68,9 +88,11 @@ def _checked(path, digest, row_id):
     return np.asarray(wave, np.float32)
 
 
-def materialise(row, default_lang='tr'):
-    """(wave float32 16 kHz, per-sample language track int8) of a manifest row."""
-    base = CODE[row['lang']] if row.get('lang') else (NS if not row.get('text', '').strip() else CODE[default_lang])
+def materialise(row, default_lang='tr', codes=CODE):
+    """(wave float32 16 kHz, per-sample language track int8) of a manifest row; codes: label_codes of the model's languages."""
+    rid = row.get('id')
+    base = (label_of(codes, row['lang'], rid) if row.get('lang') else
+            codes['ns'] if not row.get('text', '').strip() else label_of(codes, default_lang, rid))
     if 'parts' in row:
         waves, tracks = [], []
         for p in row['parts']:
@@ -78,11 +100,11 @@ def materialise(row, default_lang='tr'):
             if p.get('gap_before'):
                 g = int(p['gap_before'] * 16000); waves.append(np.zeros(g, np.float32)); tracks.append(np.full(g, IGNORE, np.int8))
             w = w[int(p.get('start') or 0):p.get('end')]
-            waves.append(w); tracks.append(np.full(len(w), CODE[p['lang']] if p.get('lang') else base, np.int8))
+            waves.append(w); tracks.append(np.full(len(w), label_of(codes, p['lang'], rid) if p.get('lang') else base, np.int8))
         return np.concatenate(waves).astype(np.float32), np.concatenate(tracks)
     wave = _checked(row['audio_path'], row.get('pcm_sha256'), row['id']); track = np.full(len(wave), base, np.int8)
     for s, e, lang in row.get('lang_spans') or ():
-        track[max(0, int(s * 16000)):min(len(wave), int(e * 16000))] = CODE[lang]
+        track[max(0, int(s * 16000)):min(len(wave), int(e * 16000))] = label_of(codes, lang, rid)
     return wave, track
 
 
@@ -105,20 +127,22 @@ def frames(track, hop):
 
 
 class Rows(Dataset):
-    """Items (index, wave, label ids, frame language labels, condition id). seed: (run seed, epoch) for the condition draws."""
-    def __init__(self, rows, labels, hop, band_frames=5, cond_p=.7, seed=(0, 0), default_lang='tr'):
+    """Items (index, wave, label ids, frame language labels, condition id). seed: (run seed, epoch) for the condition draws;
+    languages: the language head's languages (condition ids follow the same order, auto = len(languages))."""
+    def __init__(self, rows, labels, hop, band_frames=5, cond_p=.7, seed=(0, 0), default_lang='tr', languages=('tr', 'en')):
         self.rows, self.labels, self.hop, self.band, self.cond_p = rows, labels, hop, band_frames, cond_p
         self.seed, self.default_lang = seed, default_lang
+        self.codes, self.auto = label_codes(languages), len(languages)
 
     def __len__(self):
         return len(self.rows)
 
     def __getitem__(self, i):
-        wave, track = materialise(self.rows[i], self.default_lang)
+        wave, track = materialise(self.rows[i], self.default_lang, self.codes)
         track = band(track, self.band * self.hop)
-        has_tr, has_en = bool((track == TR).any()), bool((track == EN).any())
+        spoken = [int(x) for x in np.unique(track) if 0 <= x < self.auto]
         draw = np.random.default_rng([*self.seed, i]).random()
-        cond = COND_AUTO if has_tr == has_en else (COND_TR if has_tr else COND_EN) if draw < self.cond_p else COND_AUTO
+        cond = spoken[0] if len(spoken) == 1 and draw < self.cond_p else self.auto
         return i, torch.from_numpy(wave), torch.tensor(self.labels[i], dtype=torch.long), frames(track, self.hop), cond
 
 

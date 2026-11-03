@@ -1,4 +1,4 @@
-"""The two balbal-v2 models and how their PyTorch weights load.
+"""The two balbal-v2 model families and how their PyTorch weights load.
 
   balbal-v2        Conformer-CTC (16 layers, d_model 176, 4x subsampling) + 3-pass loop refiner + product-key acoustic memory
                    (500x500 sub-keys, 4 heads, top-16). SentencePiece 1024 + blank. Same architecture as balbal-v1.
@@ -6,13 +6,25 @@
                    acoustic memory (1000x1000 sub-keys, 8 heads, top-32, learned per-head read temperature) + frame-level language head
                    (tr / en / non-speech). SentencePiece 2048 (Turkish + English) + blank.
 
-configs/<name>/model_config.yaml (NeMo), refiner.json (refiner + memory), decoder.json (KenLM beam search).
-A tokenizer directory holds tokenizer.model, tokenizer.vocab and vocab.txt.
+configs/<name>/model_config.yaml (NeMo), refiner.json (refiner + memory), decoder.json (KenLM beam search). A model folder may carry
+its own copies of these three files: they win over configs/<name>/ (a model trained with another memory size, vocabulary or LM weights).
+A tokenizer directory holds tokenizer.model, tokenizer.vocab and vocab.txt. The CTC head takes its size from the tokenizer;
+refiner.json "config.vocabulary" must equal it.
+
+MODEL_DIR/model.json describes a model folder (see describe()):
+  {"model": "balbal-v2-manas", "name": "my-azerbaijani-model", "languages": ["az"], "itn": null, "long_windows": [30, 10]}
+  model         the architecture family: balbal-v2 or balbal-v2-manas
+  name          a display name (default: the family)
+  languages     spoken languages, primary first (default: the family's, tr / tr + en); the primary language picks the ITN, the hotword
+                casing and the scoring rules (balbal.lang)
+  itn           a language code whose number writing (ITN) transcribe() applies, or false (default: the primary language's, if any)
+  long_windows  [window, overlap] seconds for audio longer than 30 s (default 30, 10)
 
 Optional training-time modules (not part of the released inference graph):
-  language head  balbal-v2: model.decoder.lang_head, saved next to the weights as *.lang.pt; balbal-v2-manas: model.lang_head, in the weights
-  condition      model.lang_cond: utterance-level language condition (tr 0 / en 1 / auto 2), zero-initialised, added (x scale) to the
-                 encoder's subsampling output; model._cond_ids (B,) selects it, None = auto
+  language head  frame-level classes = refiner.json "languages" (default tr, en) + non-speech (last); balbal-v2: model.decoder.lang_head,
+                 saved next to the weights as *.lang.pt; balbal-v2-manas: model.lang_head, in the weights
+  condition      model.lang_cond: utterance-level language condition (one id per language in that order, then auto; default tr 0 / en 1 /
+                 auto 2), zero-initialised, added (x scale) to the encoder's subsampling output; model._cond_ids (B,) selects it, None = auto
 """
 import json
 import math
@@ -20,24 +32,58 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIGS = ROOT / 'configs'
-MODELS = ('balbal-v2', 'balbal-v2-manas')
-LANGUAGES = ('tr', 'en', 'non-speech')
+MODELS = ('balbal-v2', 'balbal-v2-manas')   # architecture families
+FAMILY_LANGUAGES = {'balbal-v2': ('tr',), 'balbal-v2-manas': ('tr', 'en')}
+HEAD_LANGUAGES = ('tr', 'en')                 # language-head classes when refiner.json has no "languages" (+ non-speech)
+LANGUAGES = HEAD_LANGUAGES + ('non-speech',)
 COND_IDS = {'tr': 0, 'en': 1, 'auto': 2}
 LANG_HEAD = {'balbal-v2': 'decoder.lang_head.', 'balbal-v2-manas': 'lang_head.'}
+DEFAULT_LONG_WINDOWS = (30., 10.)
 
 
 def check_name(name):
     if name not in MODELS:
-        raise ValueError(f'unknown model {name!r} (one of {", ".join(MODELS)})')
+        raise ValueError(f'unknown model family {name!r} (one of {", ".join(MODELS)})')
     return name
 
 
-def refiner_config(name):
-    return json.loads((CONFIGS / check_name(name) / 'refiner.json').read_text())
+def config_path(name, filename, model_dir=None):
+    """MODEL_DIR/filename when the model folder has its own copy, else configs/<name>/filename."""
+    own = Path(model_dir) / filename if model_dir else None
+    return own if own is not None and own.exists() else CONFIGS / check_name(name) / filename
 
 
-def decoder_config(name):
-    return json.loads((CONFIGS / check_name(name) / 'decoder.json').read_text())
+def refiner_config(name, model_dir=None):
+    return json.loads(config_path(name, 'refiner.json', model_dir).read_text())
+
+
+def decoder_config(name, model_dir=None):
+    return json.loads(config_path(name, 'decoder.json', model_dir).read_text())
+
+
+def describe(model_dir=None, name=None):
+    """model.json of a model folder with the defaults filled in: {'model', 'name', 'languages', 'itn', 'long_windows'}.
+    name: the family, overriding model.json's "model" (default: model.json, else balbal-v2)."""
+    path = Path(model_dir) / 'model.json' if model_dir else None
+    info = json.loads(path.read_text()) if path is not None and path.exists() else {}
+    family = check_name(name or info.get('model') or 'balbal-v2')
+    languages = info.get('languages') or FAMILY_LANGUAGES[family]
+    if isinstance(languages, str): languages = [languages]
+    itn = info['itn'] if 'itn' in info else languages[0]
+    window, overlap = info.get('long_windows') or DEFAULT_LONG_WINDOWS
+    return dict(model=family, name=info.get('name') or family,
+                languages=list(languages), itn=itn or None, long_windows=(float(window), float(overlap)))
+
+
+def head_languages(refiner):
+    """Spoken-language classes of the language head (non-speech comes after them)."""
+    return tuple(refiner.get('languages') or HEAD_LANGUAGES)
+
+
+def condition_ids(languages=HEAD_LANGUAGES):
+    """Condition id per language (in order), then 'auto'."""
+    ids = {lang: i for i, lang in enumerate(languages)}
+    return dict(ids, auto=len(ids))
 
 
 def set_subsampling(model, factor):
@@ -56,11 +102,11 @@ def learn_temperature(memory):
     memory.register_forward_pre_hook(lambda m, _: setattr(m, 'temperature', m.log_temp.exp()))
 
 
-def attach_language_head(model, name):
-    """Frame-level language head (tr / en / non-speech) on the encoder output; model._last_encoded holds that output after a forward."""
+def attach_language_head(model, name, languages=HEAD_LANGUAGES):
+    """Frame-level language head (languages + non-speech) on the encoder output; model._last_encoded holds that output after a forward."""
     import torch
     d = model.encoder.d_model
-    head = torch.nn.Linear(d, len(LANGUAGES)).to(next(model.parameters()).device)
+    head = torch.nn.Linear(d, len(languages) + 1).to(next(model.parameters()).device)
     if name == 'balbal-v2': model.decoder.lang_head = head
     else: model.lang_head = head
     def capture(_m, _a, output): model._last_encoded = output[0]
@@ -72,23 +118,31 @@ def language_head(model):
     return model.lang_head if hasattr(model, 'lang_head') else getattr(model.decoder, 'lang_head', None)
 
 
-def attach_condition(model, scale=10.):
-    """Utterance-level language condition: Embedding(3, d_model), zero-init (an exact no-op at the start), times `scale` on the
-    subsampling output. model._cond_ids (B,) long; None = auto for every clip (evaluation, plain inference)."""
+def attach_condition(model, scale=10., languages=HEAD_LANGUAGES):
+    """Utterance-level language condition: Embedding(languages + 1, d_model), zero-init (an exact no-op at the start), times `scale` on
+    the subsampling output. model._cond_ids (B,) long; None = auto for every clip (evaluation, plain inference)."""
     import torch
-    model.lang_cond = torch.nn.Embedding(len(COND_IDS), model.encoder.d_model).to(next(model.parameters()).device)
+    ids = condition_ids(languages)
+    model.lang_cond = torch.nn.Embedding(len(ids), model.encoder.d_model).to(next(model.parameters()).device)
     torch.nn.init.zeros_(model.lang_cond.weight); model._cond_ids = None
     def add(_m, _a, output):
         x, n = output
-        ids = model._cond_ids if model._cond_ids is not None else torch.full((x.shape[0],), COND_IDS['auto'], dtype=torch.long, device=x.device)
-        return x + scale * model.lang_cond(ids.to(x.device))[:, None, :].to(x.dtype), n
+        ids_ = model._cond_ids if model._cond_ids is not None else torch.full((x.shape[0],), ids['auto'], dtype=torch.long, device=x.device)
+        return x + scale * model.lang_cond(ids_.to(x.device))[:, None, :].to(x.dtype), n
     model.encoder.pre_encode.register_forward_hook(add)
 
 
-def load_state(path):
-    """A state dict from a weights file, a training state (state.pt) or a DDP checkpoint ('module.' prefixes removed)."""
+def load_state(path, trusted=False):
+    """A state dict from a weights file, a training state (state.pt) or a DDP checkpoint ('module.' prefixes removed).
+    Files are read with torch.load(weights_only=True) (tensors and plain containers only); trusted=True also accepts any pickled
+    object, for your own training states (a pickle from someone else can run code)."""
+    import pickle
     import torch
-    s = torch.load(path, map_location='cpu', weights_only=False)
+    try:
+        s = torch.load(path, map_location='cpu', weights_only=True)
+    except pickle.UnpicklingError:
+        if not trusted: raise
+        s = torch.load(path, map_location='cpu', weights_only=False)
     if isinstance(s, dict) and 'model' in s and not hasattr(s['model'], 'shape'): s = s['model']
     return {k.removeprefix('module.'): v for k, v in s.items()}
 
@@ -103,11 +157,12 @@ def split_state(state, name):
     return keep, head, cond
 
 
-def build_model(name, tokenizer_dir, weights=None, *, device='cpu', loops=None):
+def build_model(name, tokenizer_dir, weights=None, *, device='cpu', loops=None, model_dir=None, trusted=False):
     """NeMo EncDecCTCModelBPE from configs/<name>/model_config.yaml with the tokenizer in tokenizer_dir, plus the loop refiner and
     acoustic memory (and for balbal-v2-manas: 4x stem, learned memory temperature, language head). weights: a state dict path (or dict),
     loaded strictly; balbal-v2 language-head / condition entries in it are ignored (use split_state for training).
-    Returns the float32 model in eval mode on `device`."""
+    model_dir: a model folder whose model_config.yaml / refiner.json replace the configs/<name>/ ones (config_path); trusted: see
+    load_state. Returns the float32 model in eval mode on `device`."""
     import torch
     from omegaconf import OmegaConf
     from nemo.collections.asr.models import EncDecCTCModelBPE
@@ -116,23 +171,27 @@ def build_model(name, tokenizer_dir, weights=None, *, device='cpu', loops=None):
     from balbal.model.conformer_loop_memory import attach_loop_memory
     logging.set_verbosity(logging.ERROR)
     check_name(name)
-    cfg = OmegaConf.load(CONFIGS / name / 'model_config.yaml')
+    cfg = OmegaConf.load(config_path(name, 'model_config.yaml', model_dir))
     for key, value in list(cfg.tokenizer.items()):
         if isinstance(value, str) and (value == 'tokenizer' or value.startswith('tokenizer/')):
             cfg.tokenizer[key] = str(Path(tokenizer_dir) / value.removeprefix('tokenizer').lstrip('/'))
+    refiner = refiner_config(name, model_dir)
+    cfg.decoder.num_classes = -1   # NeMo sizes the CTC head from the tokenizer
     model = EncDecCTCModelBPE(cfg=cfg).float()
     model.loss.zero_infinity = False
-    refiner = refiner_config(name)
     if model.encoder.subsampling_factor != refiner['subsampling_factor']: set_subsampling(model, refiner['subsampling_factor'])
     if name == 'balbal-v2':
         for layer in model.encoder.layers:   # NeMo's own attention kernel, not PyTorch SDPA (as trained)
             layer.self_attn.use_pytorch_sdpa = False
     attach_loop_memory(model, refiner['config'], memory_config=refiner['memory'])
     if refiner.get('learned_temperature'): learn_temperature(model.ctc_extra.acoustic_memory)
-    if refiner.get('language_head'): attach_language_head(model, name)
-    assert model.decoder.num_classes_with_blank == refiner['config']['vocabulary'] + 1
+    model.balbal_languages = head_languages(refiner)
+    if refiner.get('language_head'): attach_language_head(model, name, model.balbal_languages)
+    if model.decoder.num_classes_with_blank != refiner['config']['vocabulary'] + 1:
+        raise ValueError(f'tokenizer has {model.decoder.num_classes_with_blank - 1} pieces, refiner.json vocabulary is '
+                         f'{refiner["config"]["vocabulary"]}')
     if weights is not None:
-        state = weights if isinstance(weights, dict) else load_state(weights)
+        state = weights if isinstance(weights, dict) else load_state(weights, trusted)
         model.load_state_dict(split_state(state, name)[0], strict=True)
     AccessMixin.set_access_enabled(False, guid=model.model_guid)
     model.ctc_extra.inference_loops = loops or refiner['inference_loops']

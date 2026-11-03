@@ -41,7 +41,8 @@ prebuilt; its sources and wheel build are in [`pypi/`](pypi/). The rest of this 
 ## Contents
 
 ```
-balbal/              shared Python package: model definitions, model builder, audio reading, text normalizer and scorer
+balbal/              shared Python package: model definitions, model builder, audio reading, text normalizer and scorer,
+                     per-language rules (lang.py)
 configs/             balbal-v2/ and balbal-v2-manas/: NeMo model config, refiner + memory config, decoder settings
 inference/
   transcribe.py      offline transcription (runtimes fast / onnx / torch)
@@ -94,8 +95,10 @@ Every tool takes `--model-dir MODEL_DIR` (or the environment variable `BALBAL_MO
 
 ```
 MODEL_DIR/
-  model.json                         {"model": "balbal-v2"} or {"model": "balbal-v2-manas"}
+  model.json                         {"model": "balbal-v2"} or {"model": "balbal-v2-manas"} (+ optional fields, see below)
   model.pt                           PyTorch weights                    (runtime torch, ONNX export)
+  refiner.json, model_config.yaml    optional: this model's architecture, replacing configs/<family>/ (other memory size, vocabulary)
+  decoder.json                       optional: this model's KenLM decoder settings, replacing configs/<family>/decoder.json
   tokenizer/                         tokenizer.model, tokenizer.vocab, vocab.txt
   lm/                                model.binary (KenLM), tokenizer.model
   onnx/model.onnx (+ .data)          fast graph, custom operators       (runtime fast, the default)
@@ -110,6 +113,16 @@ python inference/export_onnx.py --model-dir MODEL_DIR clip1.wav clip2.wav clip3.
 
 It writes both graphs and `onnx/export.json` (log-probability and frame-argmax agreement with PyTorch). balbal-v2-manas stores its
 matrix weights in int8 by default (`--int8 on|off`); both fast graphs store the memory table in int8.
+
+`model.json` fields (only `model` is required):
+
+| Field | Meaning | Default |
+|---|---|---|
+| `model` | architecture family: `balbal-v2` or `balbal-v2-manas` | `balbal-v2` |
+| `name` | display name (results, servers) | the family |
+| `languages` | spoken languages, primary first, e.g. `["az"]`; the primary language picks the number writing (ITN), the hotword casing and the scoring rules (`balbal/lang.py`) | `["tr"]` / `["tr", "en"]` |
+| `itn` | the language whose ITN `transcribe()` applies, or `false` | the primary language's (only Turkish has one) |
+| `long_windows` | `[window, overlap]` seconds for audio longer than 30 s | `[30, 10]` |
 
 ## Offline transcription
 
@@ -215,7 +228,7 @@ The defaults are the release recipes:
 | Objective | 0.3 x base CTC + 0.7 x mean CTC of the 3 refiner passes + 0.1 x frame language CE | same |
 | Released weights | final checkpoint of the 5 epochs | uniform soup of the fine-tune's 7 evaluations, epochs 0.5 to 2.0 |
 
-Each run writes `config.json`, `metrics.jsonl` (a progress line every 100 updates, an evaluation every quarter epoch with greedy WER /
+Each run writes `config.json`, its architecture files (`refiner.json`, `model_config.yaml`, `model.json`), `metrics.jsonl` (a progress line every 100 updates, an evaluation every quarter epoch with greedy WER /
 CER on `--dev`, overall and per `source`), the best checkpoints by dev WER in `checkpoints/`, `state.pt` (`--resume` continues the
 run) and `final.pt`. `--cond` also trains an utterance-level language condition (tr / en / auto). All options: `--help`.
 
@@ -224,6 +237,37 @@ python training/soup.py soup.pt runs/my-manas/checkpoints/step*.pt          # un
 python training/build_lm.py --tokenizer MODEL_DIR/tokenizer/tokenizer.model --train train.jsonl --heldout dev.jsonl \
     --out MODEL_DIR/lm --quantize                                              # the decoder's 6-gram token KenLM
 ```
+
+## Other languages
+
+The models and the trainers are not tied to Turkish. A model for another language needs its own tokenizer, training data and KenLM;
+the rest is configuration:
+
+1. **Tokenizer:** a SentencePiece model in `tokenizer/` (`tokenizer.model`, `tokenizer.vocab`, `vocab.txt`). The CTC head takes its
+   size from it.
+2. **Architecture files:** a folder with a copy of `configs/<family>/refiner.json`, where `config.vocabulary` is the tokenizer size,
+   `languages` is the language head's languages (e.g. `["az"]`; non-speech is added after them) and the memory may be resized
+   (`memory.subkeys`). Pass it as `--config-dir`; a `model_config.yaml` there replaces the family's too.
+3. **Manifests:** `lang` is one of those languages or `ns`; `--default-lang` defaults to the first one. Dev WER / CER follow that
+   language's scoring rules (`balbal/lang.py`: Turkish has its own normalizer, other languages are scored lowercased without
+   punctuation).
+4. **Training:** e.g. from NVIDIA's English encoder:
+   ```bash
+   python training/manas/train.py runs/my-az --tokenizer-dir MY_TOKENIZER --config-dir MY_CONFIG \
+       --nemo stt_en_fastconformer_ctc_large.nemo --step-offset 0 --train train.jsonl --dev dev.jsonl
+   ```
+   The run directory gets `refiner.json`, `model_config.yaml` and `model.json` (`{"model": "balbal-v2-manas", "languages": ["az"]}`).
+   `--init` from weights with another language head size keeps everything else and starts the head fresh.
+5. **KenLM:** `python training/build_lm.py ... --language az` (held-out sentences are matched with that language's text key).
+6. **Model folder:** the checkpoint as `model.pt`, `tokenizer/`, `lm/` and the run's `refiner.json` / `model_config.yaml` /
+   `model.json` (add `"name"`, and `decoder.json` if you tuned alpha / beta), then `python inference/export_onnx.py --model-dir
+   MODEL_DIR clips...`.
+
+Upload that folder (with `onnx/`) to Hugging Face and `pip install balbal` runs it: `balbal.load('owner/name')` or
+`balbal run --model owner/name speech.wav`. The pip package needs `model.json`, `lm/` and `onnx/`; `decoder.json` is read when present.
+
+A language gets its own number writing or scoring by adding an entry to `LANGUAGES` in `balbal/lang.py` (an ITN like
+`balbal/normalizer/itn.py`, a scorer like `balbal/normalizer/metrics_v2.py`). Without one, numbers stay as the model writes them.
 
 ## Checks
 

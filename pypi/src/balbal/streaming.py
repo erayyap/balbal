@@ -31,7 +31,6 @@ import time
 import numpy as np
 
 from .engine import MIN_SAMPLES
-from .itn import itn_text
 
 FRAME, FPS = 640, 25   # samples per output frame (16 kHz, 10 ms hop, 4x subsampling), frames per second
 MODES = ('segment', 'window')
@@ -345,14 +344,16 @@ class LiveStream:
 
     mode      'segment' (default) or 'window'
     hotwords  names / words expected in the audio, favoured while decoding
-    itn       spoken numbers as digits in the event texts and the transcript (default True)
+    itn       spoken numbers as digits in the event texts and the transcript (default True; the model's ITN, Turkish only)
     options   stream settings in seconds: chunk (.32), right (.64 lookahead), endpoint (.5 pause that closes a segment),
               max_segment (5 segment / 20 window), and for window mode left (8) and first_right (1.6)"""
 
     def __init__(self, model, mode='segment', hotwords=None, itn=True, **options):
         if mode not in MODES: raise ValueError(f'mode must be one of {MODES}')
         if isinstance(hotwords, str): hotwords = [w.strip() for w in hotwords.split(',') if w.strip()]
-        self.mode, self.itn = mode, itn
+        self.mode = mode
+        itn_text = model._itn[0] if itn and model._itn else None
+        self.itn = itn_text
         self.engine = _Engine(model, hotwords or None)
         if options.get('max_segment') is None: options['max_segment'] = 5. if mode == 'segment' else 20.
         self.options = options
@@ -362,8 +363,8 @@ class LiveStream:
     def _events(self, events):
         if not self.itn: return events
         for e in events:
-            e['text'] = itn_text(e['text'])
-            if e.get('stable'): e['stable'] = itn_text(e['stable'])
+            e['text'] = self.itn(e['text'])
+            if e.get('stable'): e['stable'] = self.itn(e['stable'])
         return events
 
     def accept(self, audio):
@@ -381,7 +382,7 @@ class LiveStream:
     def transcript(self):
         """Text of all closed segments (all of the audio after finish())."""
         text = self._stream.transcript()
-        return itn_text(text) if self.itn else text
+        return self.itn(text) if self.itn else text
 
     @property
     def stats(self):

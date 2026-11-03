@@ -29,9 +29,10 @@ def main():
     p.add_argument('--model', choices=T.M.MODELS, default=None)
     p.add_argument('--runtime', choices=('fast', 'onnx'), default='fast')
     p.add_argument('--threads', type=int, default=8)
+    p.add_argument('--lm-dir', type=Path, default=None, help='default: MODEL_DIR/lm')
     a = p.parse_args()
-    eng = T.Engine(a.model_dir, a.model, a.runtime, a.threads)
-    off = KenLMDecoder(a.model_dir / 'lm', eng.cfg, fast=True).decode
+    eng = T.Engine(a.model_dir, a.model, a.runtime, a.threads, lm_dir=a.lm_dir)
+    off = KenLMDecoder(a.lm_dir or a.model_dir / 'lm', eng.cfg, fast=True).decode
     off_kw = dict(endpoint=1e9, max_segment=1e9, trace=True)
     n = len(a.audio); ok = dict(window=0, pieces=0, segment=0, default=0)
     for path in a.audio:

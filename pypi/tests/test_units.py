@@ -87,3 +87,58 @@ def test_batch_expand(tmp_path):
     (tmp_path / 'y.mp3').write_bytes(b'')
     got = expand([tmp_path])
     assert [str(rel) for _, rel in got] == ['a/x.wav', 'y.mp3']
+
+
+def test_language_rules():
+    from balbal import lang
+    tr, az, en = lang.get('tr-TR'), lang.get('az'), lang.get('en')
+    assert tr.lower('IŞIK İzmir') == 'ışık izmir' and az.lower('İlham') == 'ilham' and en.lower('Istanbul') == 'istanbul'
+    assert tr.capitalize('istanbul') == 'İstanbul' and en.capitalize('istanbul') == 'Istanbul'
+    assert lang.itn_functions('tr')[0]('bin dokuz yüz doksan beş') == '1995'
+    assert lang.itn_functions('az') is None and lang.itn_functions('kk') is None and lang.itn_functions(None) is None
+
+
+def test_resolve_and_model_info(tmp_path):
+    from balbal import hub
+    from balbal.engine import model_info
+    assert hub.resolve('manas') == ('registry', 'balbal-v2-manas')
+    assert hub.resolve('someone/azerbaijani-model') == ('repo', 'someone/azerbaijani-model')
+    assert hub.resolve(str(tmp_path)) == ('local', tmp_path)
+    with pytest.raises(ValueError): hub.resolve('not a model')
+    assert model_info(tmp_path) == dict(model='balbal-v2', name='balbal-v2', languages=['tr'], itn='tr', long_windows=(30., 10.))
+    (tmp_path / 'model.json').write_text(json.dumps({'model': 'balbal-v2-manas', 'languages': ['az'], 'name': 'az-model'}))
+    info = model_info(tmp_path)
+    assert info['model'] == 'balbal-v2-manas' and info['name'] == 'az-model' and info['languages'] == ['az'] and info['itn'] == 'az'
+    assert model_info(tmp_path, name='owner/x')['name'] == 'az-model'
+
+
+def test_repo_without_onnx_says_how_to_export(tmp_path, monkeypatch):
+    import huggingface_hub
+    from balbal import hub
+    listed = ['model.json', 'model.pt', 'lm/model.binary', 'lm/tokenizer.model']   # a torch checkpoint and an LM, no onnx/
+    monkeypatch.setattr(huggingface_hub, 'list_repo_files', lambda repo, revision=None: listed)
+    def no_download(**kwargs): raise AssertionError('nothing may be downloaded')
+    monkeypatch.setattr(huggingface_hub, 'snapshot_download', no_download)
+    with pytest.raises(FileNotFoundError, match='export_onnx'):
+        hub.download('owner/torch-only', 'fast', cache_dir=tmp_path)
+
+
+def test_other_scripts_punctuation_and_sentence_ends():
+    from balbal.word_timing import _content
+    assert not _content('؟') and not _content('▁«') and _content('▁%') and _content('/')
+    words = [dict(word='مرحبا؟', start=0., end=.5), dict(word='كيف', start=.6, end=1.)]
+    assert len(segments_from_words(words)) == 2
+
+
+def test_wyoming_routes_by_language():
+    from types import SimpleNamespace
+    from balbal.wyoming_server import choose
+    loaded = {'balbal-v2': SimpleNamespace(languages=['tr'], source='balbal-v2'),
+              'balbal-v2-manas': SimpleNamespace(languages=['tr', 'en'], source='balbal-v2-manas'),
+              'az-model': SimpleNamespace(languages=['az'], source='/models/az')}
+    pool = SimpleNamespace(models=list(loaded), loaded=loaded)
+    from balbal.server import Pool
+    pool.lookup = lambda name: Pool.lookup(pool, name)
+    assert choose(pool, None, 'en-US') == 'balbal-v2-manas' and choose(pool, None, 'az') == 'az-model'
+    assert choose(pool, None, 'tr') == 'balbal-v2' and choose(pool, None, 'de') == 'balbal-v2' and choose(pool, None, None) == 'balbal-v2'
+    assert choose(pool, 'manas', 'tr') == 'balbal-v2-manas' and choose(pool, 'az-model') == 'az-model'

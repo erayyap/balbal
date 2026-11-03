@@ -12,5 +12,5 @@ from .engine import Model, load, transcribe
 from .hub import MODELS, download
 from .streaming import LiveStream
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'
 __all__ = ['Model', 'LiveStream', 'load', 'transcribe', 'download', 'MODELS', '__version__']

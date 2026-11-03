@@ -5,8 +5,8 @@ then in Home Assistant: Settings -> Devices & services -> Add integration -> Wyo
 pick balbal as the speech-to-text engine of a voice assistant.
 
 Every voice command is transcribed whole at AudioStop (full-context decoding; a few tens of milliseconds for a command). Audio of any
-rate / width / channels is converted to 16 kHz mono. The Transcribe event's model name picks a served model; language 'en' goes to
-balbal-v2-manas when it is served. --use-ha-names turns the names / terms Home Assistant sends with a request (transcript_names,
+rate / width / channels is converted to 16 kHz mono. The Transcribe event's model name picks a served model; otherwise its language
+goes to the first served model with that language (e.g. 'en' -> balbal-v2-manas), else to the first served model. --use-ha-names turns the names / terms Home Assistant sends with a request (transcript_names,
 transcript_terms) into hotwords, next to the fixed --hotwords. A command where no word reaches the no-speech confidence (silence, noise;
 result['no_speech']) gets an empty transcript, so it cannot trigger an action; --keep-no-speech returns its text anyway.
 """
@@ -18,20 +18,20 @@ import numpy as np
 
 from . import __version__
 from .engine import default_threads
-from .hub import model_name
+from . import lang
 from .server import BusyError, Pool
 
-LANGUAGES = {'balbal-v2': ['tr'], 'balbal-v2-manas': ['tr', 'en']}
 MAX_HOTWORDS = 200
 
 
-def info_event(models):
+def info_event(languages):
+    """languages: {served model name: its language codes}."""
     from wyoming.info import AsrModel, AsrProgram, Attribution, Info
     who = Attribution(name='Eray Yapağcı', url='https://erayy.com/balbal')
     return Info(asr=[AsrProgram(
-        name='balbal', description='balbal: open Turkish speech recognition on CPU', attribution=who, installed=True, version=__version__,
-        models=[AsrModel(name=m, description=f'{m} ({", ".join(LANGUAGES[m])})', attribution=who, installed=True, version=__version__,
-                         languages=LANGUAGES[m]) for m in models])]).event()
+        name='balbal', description='balbal: open speech recognition on CPU', attribution=who, installed=True, version=__version__,
+        models=[AsrModel(name=m, description=f'{m} ({", ".join(ls)})', attribution=who, installed=True, version=__version__,
+                         languages=list(ls)) for m, ls in languages.items()])]).event()
 
 
 def handler_class():
@@ -57,14 +57,7 @@ def handler_class():
             if Transcribe.is_type(event.type):
                 t = Transcribe.from_event(event)
                 self.language = t.language
-                served = self.pool.models
-                name = None
-                if t.name:
-                    try: name = model_name(t.name)
-                    except ValueError: name = None
-                if name not in served:
-                    name = 'balbal-v2-manas' if (t.language or '').startswith('en') and 'balbal-v2-manas' in served else served[0]
-                self.model = name
+                self.model = choose(self.pool, t.name, t.language)
                 if self.use_ha_names:
                     self.request_words = [w for w in (getattr(t, 'transcript_names', None) or []) + (getattr(t, 'transcript_terms', None) or [])
                                           if isinstance(w, str) and w.strip()]
@@ -94,18 +87,32 @@ def handler_class():
     return Handler
 
 
+def choose(pool, name=None, language=None):
+    """Served model for a request: the named one if it is served, else the first served model with the request's language, else the
+    first served model."""
+    if name:
+        try: return pool.lookup(name)
+        except ValueError: pass
+    if language:
+        want = lang.code(language)
+        for m in pool.models:
+            if want in (lang.code(x) for x in pool.loaded[m].languages): return m
+    return pool.models[0]
+
+
 def serve(models, uri='tcp://0.0.0.0:10300', workers=1, threads=None, runtime='fast', hotwords=None, use_ha_names=False, itn=True,
           keep_no_speech=False):
     try:
         from wyoming.server import AsyncServer
     except ImportError:
         raise SystemExit("balbal wyoming needs the wyoming extra: pip install 'balbal[wyoming]'")
-    models = [model_name(m) for m in models] or ['balbal-v2']
+    sources = [str(m) for m in models] or ['balbal-v2']
     threads = threads or max(1, default_threads() // workers)
-    print(f'balbal: loading {", ".join(models)} ({workers} worker(s) x {threads} thread(s), {runtime} runtime)', file=sys.stderr, flush=True)
-    pool = Pool(models, workers, threads, runtime, backlog=64)
+    print(f'balbal: loading {", ".join(sources)} ({workers} worker(s) x {threads} thread(s), {runtime} runtime)', file=sys.stderr, flush=True)
+    pool = Pool(sources, workers, threads, runtime, backlog=64)
     hotwords = [w.strip() for w in (hotwords or '').split(',') if w.strip()]
-    handler = partial(handler_class(), pool, info_event(models), hotwords, use_ha_names, itn, keep_no_speech)
+    info = info_event({m: pool.loaded[m].languages for m in pool.models})
+    handler = partial(handler_class(), pool, info, hotwords, use_ha_names, itn, keep_no_speech)
     print(f'balbal: Wyoming speech-to-text on {uri}', file=sys.stderr, flush=True)
     try:
         asyncio.run(AsyncServer.from_uri(uri).run(handler))

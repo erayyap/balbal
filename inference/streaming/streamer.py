@@ -46,7 +46,7 @@ class Engine:
     def __init__(self, model_dir, model=None, runtime='fast', threads=8, share=None, lm_dir=None, settings=None):
         from ctc_lm_bonus import TokenBonusLM
         self.model_dir = Path(model_dir); self.model = model_name(model_dir, model)
-        self.cfg = dict(M.decoder_config(self.model), **(settings or {}))
+        self.cfg = dict(M.decoder_config(self.model, self.model_dir), **(settings or {}))
         assert runtime in ('fast', 'onnx'), runtime
         graph = self.model_dir / 'onnx' / ('model.onnx' if runtime == 'fast' else 'model-plain.onnx')
         self.session = ort_session(graph, threads, custom_ops=runtime == 'fast')

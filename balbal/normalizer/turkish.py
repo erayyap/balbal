@@ -144,14 +144,14 @@ def normalize_turkish(text: object) -> str:
     return _WHITESPACE_RE.sub(" ", value.translate(PUNCT_SYMBOL_TO_SPACE)).strip()
 
 
-def normalized_corpus_metrics(references, hypotheses) -> dict[str, float]:
-    """Uncapped corpus metrics; empty refs contribute insertions, not fake words."""
+def normalized_corpus_metrics(references, hypotheses, normalize=normalize_turkish) -> dict[str, float]:
+    """Uncapped corpus metrics; empty refs contribute insertions, not fake words. normalize: the scoring normalizer."""
     import jiwer
     if not references or len(references) != len(hypotheses):
         raise ValueError('nonempty aligned references and hypotheses required')
     report = {}
     for prefix, refs, hyps in [
-        ('', [normalize_turkish(x) for x in references], [normalize_turkish(x) for x in hypotheses]),
+        ('', [normalize(x) for x in references], [normalize(x) for x in hypotheses]),
         ('raw_', references, hypotheses),
     ]:
         # jiwer 3 rejects empty references; count their insertions explicitly.

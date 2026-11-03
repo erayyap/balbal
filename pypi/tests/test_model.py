@@ -51,7 +51,7 @@ def test_server(model, speech):
     import soundfile as sf
     from fastapi.testclient import TestClient
     from balbal.server import create_app
-    client = TestClient(create_app([model.model], threads=2, api_key='k'))
+    client = TestClient(create_app([model.source], threads=2, api_key='k'))
     h = {'Authorization': 'Bearer k'}
     buf = io.BytesIO(); sf.write(buf, speech[0], 16000, format='WAV'); data = buf.getvalue()
     assert client.post('/v1/audio/transcriptions', files={'file': ('a.wav', data)}).status_code == 401

@@ -1,6 +1,9 @@
-"""Export balbal-v2 / balbal-v2-manas to the two CPU graphs of runtime.py: 16 kHz PCM in, natural-log CTC probabilities out.
+"""Export a balbal-v2 / balbal-v2-manas model (or one trained on their architectures) to the two CPU graphs of runtime.py: 16 kHz PCM
+in, natural-log CTC probabilities out.
 
   python inference/export_onnx.py --model-dir MODEL_DIR clip1.wav clip2.wav ...        # needs MODEL_DIR/model.pt + tokenizer/
+The architecture comes from MODEL_DIR/model.json ("model": the family) and MODEL_DIR/refiner.json / model_config.yaml when the folder
+has them (else configs/<family>/), so a model with another memory size or vocabulary exports as it is.
 writes MODEL_DIR/onnx/{model.onnx, model.onnx.data, model-plain.onnx, model-plain.onnx.data, export.json}. The clips (any 16 kHz-readable
 audio, a few seconds each) are the parity check; the middle one is the trace example.
 
@@ -215,7 +218,7 @@ def lean_refiner(ex):
 
 
 def lean_model(name, model_dir, custom):
-    model = M.build_model(name, Path(model_dir) / 'tokenizer', Path(model_dir) / 'model.pt')
+    model = M.build_model(name, Path(model_dir) / 'tokenizer', Path(model_dir) / 'model.pt', model_dir=model_dir)
     mem = model.ctc_extra.acoustic_memory
     if hasattr(mem, 'log_temp'): mem.temperature = mem.log_temp.detach().exp()
     wrapper = Exported(model).eval()
@@ -235,7 +238,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('clips', type=Path, nargs='+', help='audio files for the parity check (the middle one is the trace example)')
     p.add_argument('--model-dir', type=Path, default=os.getenv('BALBAL_MODEL_DIR'), required=not os.getenv('BALBAL_MODEL_DIR'))
-    p.add_argument('--model', choices=M.MODELS, default=None, help='default: MODEL_DIR/model.json')
+    p.add_argument('--model', choices=M.MODELS, default=None, help='architecture family (default: MODEL_DIR/model.json)')
     p.add_argument('--out', type=Path, default=None, help='default: MODEL_DIR/onnx')
     p.add_argument('--int8', choices=('auto', 'on', 'off'), default='auto', help='int8 MatMul weights (auto: on for balbal-v2-manas)')
     p.add_argument('--only', choices=('fast', 'plain'), default=None, help='export one of the two graphs')
@@ -245,7 +248,7 @@ def main():
     int8 = INT8_DEFAULT[name] if args.int8 == 'auto' else args.int8 == 'on'
     out = args.out or args.model_dir / 'onnx'; out.mkdir(parents=True, exist_ok=True); torch.set_num_threads(args.threads)
     waves = [read_audio(c) for c in args.clips]
-    model = M.build_model(name, args.model_dir / 'tokenizer', args.model_dir / 'model.pt')
+    model = M.build_model(name, args.model_dir / 'tokenizer', args.model_dir / 'model.pt', model_dir=args.model_dir)
     with torch.inference_mode():
         reference = []
         for w in waves:

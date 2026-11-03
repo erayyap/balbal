@@ -1,5 +1,7 @@
 """Train / fine-tune balbal-v2-manas (FastConformer-CTC 18 x d512 at 4x + 3-pass loop refiner + product-key acoustic memory with a
 learned per-head temperature + frame language head, SentencePiece 2048 Turkish + English).
+Other languages or sizes: --tokenizer-dir with your tokenizer and --config-dir with your refiner.json ("config.vocabulary" = the
+tokenizer size, "languages" = the language head's languages, e.g. ["az"]); see README "Other languages".
 
   python training/manas/train.py runs/NAME --tokenizer-dir TOKENIZER_DIR --init WEIGHTS.pt --train train.jsonl --dev dev.jsonl
   python training/manas/train.py runs/NAME --tokenizer-dir TOKENIZER_DIR --nemo stt_en_fastconformer_ctc_large.nemo --step-offset 0 ...
@@ -42,7 +44,8 @@ def main():
     args = p.parse_args()
     if args.nemo and args.init: p.error('--nemo and --init exclude each other')
     from balbal import models as M
-    model = M.build_model('balbal-v2-manas', args.tokenizer_dir)
+    model = M.build_model('balbal-v2-manas', args.tokenizer_dir, model_dir=args.config_dir)
+    loop.save_configs(args, 'balbal-v2-manas')
     report = load_init(model, 'balbal-v2-manas', args.init, args.cond)
     if args.nemo: report.update(from_nemo(model, args.nemo))
     print('INIT', report, flush=True)
