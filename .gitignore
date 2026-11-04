@@ -18,6 +18,7 @@ runs/
 # Built decoder extensions and custom operator libraries
 inference/kernels/android-arm64/
 *.so
+*.dylib
 __pycache__/
 *.pyc
 .venv*/
