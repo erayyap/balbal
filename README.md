@@ -89,6 +89,11 @@ ANDROID_NDK=/path/to/ndk inference/kernels/build_android.sh   # Android arm64 ->
 
 `BALBAL_OPS_LIB` points the runtime at another build of the library.
 
+On macOS (Apple Silicon) the same two scripts build with the Xcode Command Line Tools (`xcode-select --install`):
+`build_native.py` writes `inference/native/*.so`, `build.sh` writes `inference/kernels/libbalbal_ops.dylib`, and the runtime
+and `test_kernels.py` load the `.dylib`. The PyPI wheels are Linux x86_64 only; to run the package from `pypi/src`, copy
+`inference/native/ctc_*.so` into `pypi/src/balbal/_native/` and set `BALBAL_OPS_LIB` to the `.dylib`.
+
 ## Model directory
 
 Every tool takes `--model-dir MODEL_DIR` (or the environment variable `BALBAL_MODEL_DIR`):

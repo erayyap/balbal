@@ -12,7 +12,7 @@ MODEL_DIR (the weights are published separately):
 
 Runtimes (all CPU unless runtime torch gets device cuda):
   fast   lean batch-1 graph with the balbal custom operators (fused product-key memory read with an int8 value table, rel-pos
-         attention score); needs inference/kernels/libbalbal_ops.so (or BALBAL_OPS_LIB)
+         attention score); needs inference/kernels/libbalbal_ops.so (.dylib on macOS, or BALBAL_OPS_LIB)
   onnx   lean batch-1 graph with standard onnxruntime operators only (no build step besides the decoder)
   torch  the PyTorch/NeMo model (needs torch + NeMo)
 All three give [frames, V + 1] natural-log CTC probabilities (40 ms frames, blank last) to decoder.KenLMDecoder.
@@ -41,7 +41,7 @@ from balbal import lang as L
 from balbal import models as M
 
 RUNTIMES = ('fast', 'onnx', 'torch')
-OPS_LIB = Path(os.getenv('BALBAL_OPS_LIB', HERE / 'kernels/libbalbal_ops.so'))
+OPS_LIB = Path(os.getenv('BALBAL_OPS_LIB', HERE / ('kernels/libbalbal_ops.dylib' if sys.platform == 'darwin' else 'kernels/libbalbal_ops.so')))
 MIN_SAMPLES = 4000   # the convolutional subsampler needs at least 0.25 s
 HOP = 640            # samples per output frame (10 ms hop x 4 subsampling): frame j of a window at sample s = file frame s / HOP + j
 SEGMENT_SECONDS = 300.

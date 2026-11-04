@@ -11,7 +11,7 @@ import numpy as np
 import onnxruntime as ort
 from onnx import TensorProto, helper
 
-LIB = str(Path(__file__).resolve().parent / 'libbalbal_ops.so')
+LIB = str(Path(__file__).resolve().parent / ('libbalbal_ops.dylib' if sys.platform == 'darwin' else 'libbalbal_ops.so'))
 F, I8 = TensorProto.FLOAT, TensorProto.INT8
 
 

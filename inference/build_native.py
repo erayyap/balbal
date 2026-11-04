@@ -58,17 +58,22 @@ for trial in range(20):
 
 def main():
     import pybind11
-    if sys.platform != 'linux':
-        raise SystemExit('This build is tested on Linux x86-64; use Linux/WSL2.')
+    if sys.platform not in ('linux', 'darwin'):
+        raise SystemExit('This build is tested on Linux x86-64 and macOS arm64; use Linux/WSL2 on Windows.')
     if importlib.metadata.version('flashlight-text') != '0.0.7' or pybind11.__version__ != '2.10.4':
         raise SystemExit('Install flashlight-text==0.0.7 and pybind11==2.10.4 first (the binding ABI must match the wheel).')
     flags = shlex.split(os.environ.get('CXXFLAGS', '-O3 -march=native'))
+    # The binding ABI tag must match the flashlight-text wheel: set explicitly for its Linux (gcc) build, pybind11's
+    # default for its macOS (clang/libc++) build.
+    abi = [] if sys.platform == 'darwin' else ['-DPYBIND11_BUILD_ABI="_cxxabi1014"']
     for name in MODULES:
         output = ROOT / 'native' / (name + sysconfig.get_config_var('EXT_SUFFIX'))
         temp = output.with_name(output.name + f'.tmp-{os.getpid()}')
         command = [*shlex.split(os.environ.get('CXX', 'c++')), *flags, '-shared', '-std=c++17', '-fPIC',
-                   '-DPYBIND11_BUILD_ABI="_cxxabi1014"', '-I' + pybind11.get_include(), '-I' + sysconfig.get_path('include'),
+                   *abi, '-I' + pybind11.get_include(), '-I' + sysconfig.get_path('include'),
                    '-I' + str(ROOT / 'native/include'), str(ROOT / 'native' / (name + '.cpp')), '-o', str(temp)]
+        if sys.platform == 'darwin':
+            command += ['-undefined', 'dynamic_lookup']   # Python symbols resolve at import, as in any macOS extension
         try:
             subprocess.run(command, check=True)
             temp.replace(output)
