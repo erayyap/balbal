@@ -285,6 +285,10 @@ LOADER_WORKERS=0 python training/balbal_v2/train.py runs/check --tokenizer-dir M
     --train toy.jsonl --dev toy-dev.jsonl --batch 4 --micro 2 --updates 3 --eval-epochs 1 --progress-every 1
 ```
 
+## Contributing
+
+Issues and pull requests are welcome; see `CONTRIBUTING.md`.
+
 ## License and citation
 
 Code: Apache License 2.0 (`LICENSE`, `NOTICE`). The balbal-v2-manas model configuration derives from NVIDIA's
