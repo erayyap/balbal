@@ -105,6 +105,9 @@ class Model:
     threads    CPU threads (default: BALBAL_THREADS, else min(8, CPU count))
     model_dir  a local model folder (model.json, onnx/, lm/; same as passing the folder as model)
     revision   Hugging Face revision (default: the one this release was tested with, or main for other repos)
+    settings   decoder settings over decoder.json, e.g. {'domain_lm': 'my-lm', 'domain_weight': 0.3}: a domain KenLM directory (built
+               on your own text with this model's tokenizer) mixed into the general LM; also a model folder's own decoder.json
+               (a relative domain_lm there is relative to the folder)
     Attributes: model (display name), family (architecture), languages (primary first), source (what to load it again from).
     """
 
@@ -128,7 +131,9 @@ class Model:
         self._itn = lang.itn_functions(self.info['itn'])
         own = self.model_dir / 'decoder.json'
         packaged = json.loads((HERE / 'configs' / self.family / 'decoder.json').read_text())
-        self.settings = dict(packaged, **(json.loads(own.read_text()) if kind != 'registry' and own.exists() else {}), **(settings or {}))
+        mine = json.loads(own.read_text()) if kind != 'registry' and own.exists() else {}
+        if mine.get('domain_lm') and not Path(mine['domain_lm']).is_absolute(): mine['domain_lm'] = str(self.model_dir / mine['domain_lm'])
+        self.settings = dict(packaged, **mine, **(settings or {}))
         self.runtime = runtime
         try:
             self.session = self._session(runtime)

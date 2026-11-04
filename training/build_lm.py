@@ -8,7 +8,8 @@ normalize_turkish for tr, lowercase without punctuation for other languages; bal
 --discount_fallback --prune 0 0 1 1 2 2; build_binary trie; ARPA vs binary parity probe (< 1e-4).
 Needs KenLM's lmplz and build_binary (https://github.com/kpu/kenlm; set KENLM_BIN to their directory) and the kenlm module.
   python training/build_lm.py --tokenizer TOKENIZER_DIR/tokenizer.model --train a.jsonl b.jsonl --heldout dev.jsonl test.jsonl \
-      --out MODEL_DIR/lm [--scratch DIR] [--language az]
+      --out MODEL_DIR/lm [--text more.txt] [--scratch DIR] [--language az]
+A domain LM for the decoder's domain_lm (mixed into the general LM) can be built from --text alone.
 Writes OUT/model.binary, OUT/tokenizer.model, OUT/complete.json.
 """
 import argparse
@@ -40,7 +41,7 @@ def rows(path):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--tokenizer', type=Path, required=True)
-    p.add_argument('--train', type=Path, nargs='+', required=True)
+    p.add_argument('--train', type=Path, nargs='*', default=[], help='JSONL manifests whose "text" goes into the LM')
     p.add_argument('--text', type=Path, nargs='*', default=[], help='plain text files, one sentence per line')
     p.add_argument('--heldout', type=Path, nargs='*', default=[])
     p.add_argument('--quantize', action='store_true', help='8-bit quantized trie (-q 8 -b 8 -a 22)')
@@ -49,6 +50,7 @@ def main():
     p.add_argument('--memory', default='4G', help='lmplz -S')
     p.add_argument('--language', default='tr', help='language code whose text key matches held-out sentences (default tr)')
     args = p.parse_args()
+    if not args.train and not args.text: p.error('give --train manifests and/or --text files')
     import kenlm
     import sentencepiece as spm
     from balbal import lang
@@ -81,6 +83,8 @@ def main():
                     if not ids or sp.unk_id() in ids: excluded[path.name] += 1; continue
                     encoded = ' '.join(chr(i+100) for i in ids); target.write(encoded + '\n')
                     counts[path.name] += 1; token_count += len(ids)
+                    if len(probes) < 48: probes.append(encoded)
+        if not probes: raise ValueError('no LM text left (all rows empty, unrepresentable or held out)')
         arpa, binary = scratch / 'model.arpa', scratch / 'model.binary'
         with corpus.open('rb') as source, (args.out / 'build.log').open('a') as log:
             subprocess.run([tool('lmplz'), '-o', '6', '-S', args.memory, '-T', str(scratch) + '/', '--arpa', str(arpa),

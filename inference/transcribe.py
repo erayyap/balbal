@@ -29,6 +29,8 @@ def main():
     p.add_argument('--runtime', choices=RUNTIMES, default='fast')
     p.add_argument('--decoder', choices=('fast', 'flashlight'), default='fast', help='beam search implementation (same best path)')
     p.add_argument('--lm-dir', type=Path, default=None, help='default: MODEL_DIR/lm')
+    p.add_argument('--domain-lm', type=Path, default=None, help='a domain LM directory (training/build_lm.py) mixed into the KenLM')
+    p.add_argument('--domain-weight', type=float, default=None, help='its weight in the mix, 0-1 (default 0.3)')
     p.add_argument('--device', default='cpu', help='runtime torch only: cpu or cuda')
     p.add_argument('--threads', type=int, default=None, help='CPU threads (default: ASR_THREADS or 8)')
     p.add_argument('--hotwords', default='', help='comma-separated names/words to favour, e.g. "Eray,Hasan"')
@@ -37,7 +39,10 @@ def main():
     args = p.parse_args()
     hotwords = [w.strip() for w in args.hotwords.split(',') if w.strip()]
     with redirect_stdout(sys.stderr):   # keep stdout one line per file
-        engine = Engine(args.model_dir, args.model, args.runtime, args.threads, args.device, args.decoder, lm_dir=args.lm_dir)
+        settings = {k: v for k, v in dict(domain_lm=args.domain_lm and str(args.domain_lm), domain_weight=args.domain_weight).items()
+                    if v is not None}
+        engine = Engine(args.model_dir, args.model, args.runtime, args.threads, args.device, args.decoder, lm_dir=args.lm_dir,
+                        settings=settings)
     for path in args.audio:
         with redirect_stdout(sys.stderr):
             result = engine.transcribe(read_audio(path), hotwords=hotwords, itn=not args.no_itn)

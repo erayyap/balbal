@@ -1,4 +1,5 @@
-"""Model tests (BALBAL_TEST_MODELS=1): offline output shape, streaming == offline decoding on the same frames, server endpoints."""
+"""Model tests (BALBAL_TEST_MODELS=1): offline output shape, streaming == offline decoding on the same frames, domain LM, server
+endpoints."""
 import io
 import json
 
@@ -44,6 +45,24 @@ def test_stream_events(model, speech):
     finals = [e['text'] for e in events if e['type'] == 'final']
     assert stream.transcript().replace(' ', '') == ''.join(finals).replace(' ', '')
     assert stream.stats['audio_seconds'] == pytest.approx(len(speech[0]) / 16000, abs=1e-3)
+
+
+def test_domain_lm(model, speech, tmp_path):
+    """The model's own LM as the domain LM mixes to the same distribution (same text as without it); weight 0 loads no domain LM;
+    a domain LM with another tokenizer is refused."""
+    from balbal import Model
+    from balbal._native.ctc_lm_bonus import MixLM
+    lm = model.model_dir / 'lm'
+    load = lambda **settings: Model(model.source, model.runtime, model.threads, settings=settings)
+    same = load(domain_lm=str(lm), domain_weight=0.5)
+    assert isinstance(same.decoder.lm, MixLM)
+    assert same.decoder.lm.mix(-1., -3.) == pytest.approx(np.log10(.5e-1 + .5e-3), abs=1e-6)
+    for wave in speech:
+        assert same.transcribe(wave)['text'] == model.transcribe(wave)['text']
+    assert not isinstance(load(domain_lm=str(lm), domain_weight=0.).decoder.lm, MixLM)
+    (tmp_path / 'model.binary').symlink_to(lm / 'model.binary'); (tmp_path / 'tokenizer.model').write_bytes(b'other')
+    with pytest.raises(ValueError, match='another tokenizer'):
+        load(domain_lm=str(tmp_path))
 
 
 def test_server(model, speech):

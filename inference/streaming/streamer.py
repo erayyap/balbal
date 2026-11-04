@@ -53,12 +53,12 @@ class Engine:
         if share is not None:
             self.sp, self.v, self.kenlm, self.lm = share.sp, share.v, share.kenlm, share.lm; return
         import sentencepiece as spm
-        from flashlight.lib.text.decoder import KenLM
         from flashlight.lib.text.dictionary import Dictionary
+        from decoder import load_lm
         lm_dir = Path(lm_dir) if lm_dir else self.model_dir / 'lm'
         self.sp = spm.SentencePieceProcessor(model_file=str(lm_dir / 'tokenizer.model')); self.v = self.sp.vocab_size()
         self.dictionary = Dictionary([chr(i + 100) for i in range(self.v)] + ['<unk>'])
-        self.kenlm = KenLM(str(lm_dir / 'model.binary'), self.dictionary)
+        self.kenlm = load_lm(lm_dir, self.dictionary, self.cfg)   # KenLM, or its mix with the domain LM of decoder settings domain_lm
         self.lm = TokenBonusLM(self.kenlm, self.cfg['beta'] / self.cfg['alpha'])
 
     def forward(self, wave):

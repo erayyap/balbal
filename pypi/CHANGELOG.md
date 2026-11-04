@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Domain LM: `--domain-lm DIR` / `--domain-weight W` (`balbal run`, `live`, `serve`), `settings={'domain_lm': ..., 'domain_weight': ...}`
+  or the same keys in a model folder's `decoder.json` mix a KenLM built on your own text (`training/build_lm.py --text`) into the
+  general one: `p = (1 - w) p_general + w p_domain`, default weight 0.3. Without a domain LM the output is unchanged.
+- `training/build_lm.py` (GitHub repository) builds an LM from `--text` alone.
+
 ## 0.3.1
 
 - The README points to the models' new license, balbal Community License 1.1: small businesses may also build and sell speech

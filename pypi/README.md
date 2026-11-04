@@ -24,6 +24,7 @@ balbal run speech.wav                         # text
 balbal run --model manas a.wav b.mp3          # balbal-v2-manas; MP3 / M4A / video through FFmpeg
 balbal run --json speech.wav                  # one JSON line per file: text, words with start / end / confidence, timings
 balbal run --hotwords "Eray,Hasan" call.wav   # favour names / words you expect in the audio
+balbal run --domain-lm my-lm/ notes.wav       # mix your own domain KenLM into the general one (see Domain LM below)
 balbal run --no-itn speech.wav                # keep numbers as spoken words
 balbal run -f srt -o subs/ videos/            # one subtitle file per audio / video file in a folder (txt, json, srt, vtt)
 balbal run -j 4 -o out/ calls/                # four processes at once; --skip-existing resumes a stopped batch
@@ -52,6 +53,24 @@ model.transcribe(samples, sample_rate=8000)      # a NumPy waveform at any sampl
 recordings, wrong words average about 0.4 and correct words about 0.85. `no_speech` is true when no word reaches 0.15
 (silence, noise, or a short word written over digital silence); the text is left as decoded. Audio longer than 30 s is read in overlapping windows whose
 CTC frames are stitched into one sequence and decoded in one KenLM pass, so no word is cut at a window edge. One `Model` per thread.
+
+## Domain LM
+
+For words the general KenLM rarely sees (medicine, law, product names), build a small KenLM on your own text with
+`training/build_lm.py` from the [GitHub repository](https://github.com/erayyap/balbal) and mix it in:
+
+```bash
+python training/build_lm.py --tokenizer MODEL_DIR/lm/tokenizer.model --text my-sentences.txt --out my-lm
+balbal run --domain-lm my-lm --domain-weight 0.3 dictation.wav      # also balbal live / balbal serve
+```
+
+```python
+model = balbal.load('balbal-v2', settings={'domain_lm': 'my-lm', 'domain_weight': 0.3})
+```
+
+The two LMs are mixed linearly, `p = (1 - w) p_general + w p_domain`; tune the weight (default 0.3) on recordings whose text is
+not in the domain LM. `--tokenizer` must be the model's own (`lm/tokenizer.model` in its folder; `balbal download` prints the
+folder). A model folder's `decoder.json` can hold the same keys (`"domain_lm"` relative to the folder).
 
 ## Models in other languages
 

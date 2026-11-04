@@ -140,6 +140,21 @@ as digits (`bin dokuz yüz doksan beş` -> `1995`, a number run is one timed wor
 words the model writes. Audio longer than 30 s is read in overlapping windows whose CTC frames are
 stitched and decoded in one KenLM pass (no word is cut at a window edge). WAV / FLAC / OGG are read directly, other formats through FFmpeg.
 
+**Domain LM.** For words the general KenLM rarely sees (medicine, law, product names), build a small KenLM on your own text and
+mix it in:
+
+```bash
+python training/build_lm.py --tokenizer MODEL_DIR/lm/tokenizer.model --text my-sentences.txt --heldout my-test.jsonl --out my-lm
+python inference/transcribe.py --model-dir MODEL_DIR --domain-lm my-lm --domain-weight 0.3 dictation.wav
+```
+
+The decoder mixes the two linearly, `p = (1 - w) p_general + w p_domain`, so a token missing from your text keeps the general
+LM's probability. `--text` takes plain text (one sentence per line), `--train` transcript manifests; `--heldout` keeps your test
+sentences out of the LM. Tune the weight (default 0.3) on recordings whose text is not in the domain LM. The same settings in a
+model folder's `decoder.json` (`"domain_lm": "my-lm"`, relative to the folder, and `"domain_weight": 0.3`) apply to
+`transcribe.py`, the streaming server and the pip package. Decoding takes about 10% longer (the acoustic model's time is
+unchanged).
+
 In Python:
 
 ```python

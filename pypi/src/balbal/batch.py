@@ -61,7 +61,8 @@ def run(args):
             files = [(f, rel) for f, rel in files if f not in set(done)]
     jobs = max(1, min(args.jobs, len(files) or 1))
     threads = max(1, (args.threads or default_threads()) // jobs) if jobs > 1 else args.threads
-    model_args = dict(model=args.model, runtime=args.runtime, threads=threads, model_dir=args.model_dir, revision=args.revision)
+    model_args = dict(model=args.model, runtime=args.runtime, threads=threads, model_dir=args.model_dir, revision=args.revision,
+                      settings=getattr(args, 'settings', None))
     options = dict(hotwords=args.hotwords or None, itn=not args.no_itn)
     many, status, t0, audio = len(files) > 1, 0, time.perf_counter(), 0.
     paths = [f for f, _ in files]

@@ -11,6 +11,8 @@ Two searches with the same best path:
   flashlight  flashlight-text's LexiconFreeDecoder itself (fast=False)
 Optional hotwords (names/words expected in the audio) get a per-character bonus while decoding; see decode_words().
 The LM directory holds model.binary (KenLM) and tokenizer.model (SentencePiece; piece i is the LM word chr(i + 100)).
+Optional domain LM: settings domain_lm = another LM directory (built on in-domain text with the same tokenizer), mixed in
+linearly with weight domain_weight (default 0.3): p = (1 - w) p_general + w p_domain. See load_lm().
 """
 from __future__ import annotations
 import math
@@ -43,6 +45,39 @@ def prepare(array, settings):
     return np.ascontiguousarray(a, dtype=np.float32), kept
 
 
+DOMAIN_WEIGHT = 0.3
+
+
+def _kenlm():
+    try:
+        from flashlight.lib.text.decoder.kenlm import KenLM
+    except ImportError:
+        from flashlight.lib.text.decoder import KenLM
+    return KenLM
+
+
+def load_lm(lm_dir, dictionary, settings):
+    """The KenLM of lm_dir, or its linear mix with the domain LM of settings['domain_lm'] (a directory with model.binary and the same
+    tokenizer.model; weight settings['domain_weight'], default 0.3). Weight 0 = the general LM alone, 1 = the domain LM alone."""
+    KenLM = _kenlm()
+    lm_dir = Path(lm_dir)
+    general = KenLM(str(lm_dir / 'model.binary'), dictionary)
+    path = settings.get('domain_lm')
+    if not path: return general
+    weight = float(settings.get('domain_weight', DOMAIN_WEIGHT))
+    if not 0 <= weight <= 1: raise ValueError('domain_weight must be between 0 and 1')
+    if weight == 0: return general
+    path = Path(path)
+    for name in ('model.binary', 'tokenizer.model'):
+        if not (path / name).is_file(): raise FileNotFoundError(f'domain LM {path} has no {name}')
+    if (path / 'tokenizer.model').read_bytes() != (lm_dir / 'tokenizer.model').read_bytes():
+        raise ValueError(f'domain LM {path} was built with another tokenizer than {lm_dir}: use the model\'s tokenizer.model')
+    domain = KenLM(str(path / 'model.binary'), dictionary)
+    if weight == 1: return domain
+    from ._native.ctc_lm_bonus import MixLM
+    return MixLM(general, domain, weight)
+
+
 class KenLMDecoder:
     """CPU decoder; reuse one instance per thread/process."""
 
@@ -50,10 +85,6 @@ class KenLMDecoder:
         """language: a balbal.lang.Language whose casing makes the hotword variants (default Turkish)."""
         import sentencepiece as spm
         from flashlight.lib.text.decoder import ZeroLM
-        try:
-            from flashlight.lib.text.decoder.kenlm import KenLM
-        except ImportError:
-            from flashlight.lib.text.decoder import KenLM
         from flashlight.lib.text.dictionary import Dictionary
         try:
             from ._native.ctc_lm_bonus import HotwordLM, TokenBonusLM
@@ -71,7 +102,7 @@ class KenLMDecoder:
         self.vocab_size = self.sp.vocab_size()
         self.blank_id = self.vocab_size
         self.dictionary = Dictionary([chr(i + 100) for i in range(self.vocab_size)] + ['<unk>'])
-        self.lm = KenLM(str(lm_dir / 'model.binary'), self.dictionary) if s['alpha'] else ZeroLM()
+        self.lm = load_lm(lm_dir, self.dictionary, s) if s['alpha'] else ZeroLM()
         self.scale = s['alpha'] if s['alpha'] else 1.0
         self.bonus = s['beta'] / self.scale
         self.wrapped_lm = TokenBonusLM(self.lm, self.bonus)

@@ -1,6 +1,7 @@
 """Build the native CTC decoder extensions against the pinned flashlight-text wheel, then check them.
 
-  ctc_lm_bonus        TokenBonusLM (per-token length reward) and HotwordLM (hotword biasing) around flashlight's KenLM
+  ctc_lm_bonus        TokenBonusLM (per-token length reward), HotwordLM (hotword biasing) and MixLM (general + domain LM mix)
+                      around flashlight's KenLM
   ctc_fast_decoder    FastCTCDecoder: the exact best path of flashlight's LexiconFreeDecoder (CTC) with fewer LM queries
   ctc_stream_decoder  StreamCTCDecoder: the same search, incremental (streaming)
 
@@ -23,7 +24,7 @@ CHECK = '''import sys
 sys.path.insert(0, sys.argv[1])
 import numpy as np
 from flashlight.lib.text.decoder import ZeroLM, LexiconFreeDecoder, LexiconFreeDecoderOptions, CriterionType
-from ctc_lm_bonus import TokenBonusLM, HotwordLM
+from ctc_lm_bonus import TokenBonusLM, HotwordLM, MixLM
 from ctc_fast_decoder import FastCTCDecoder
 from ctc_stream_decoder import StreamCTCDecoder
 lm = TokenBonusLM(ZeroLM(), 3.0)
@@ -34,6 +35,10 @@ s = hot.start(False); s, a = hot.score(s, 5); s, b = hot.score(s, 6)
 assert (a, b, hot.finish(s)[1]) == (1.0, 2.0, 0.0)   # completed hotword keeps its bonus
 s = hot.start(False); s, a = hot.score(s, 5)
 assert hot.finish(s)[1] == -1.0                      # unfinished hotword: bonus taken back
+mix = MixLM(ZeroLM(), ZeroLM(), 0.3)
+s, a = mix.score(mix.start(False), 7)
+assert abs(a) < 1e-6 and abs(mix.finish(s)[1]) < 1e-6   # (1 - w) * 1 + w * 1 = 1
+assert abs(mix.mix(-1.0, -3.0) - np.log10(.7e-1 + .3e-3)) < 1e-6 and abs(mix.mix(-3.0, -1.0) - np.log10(.7e-3 + .3e-1)) < 1e-6
 # fast and streaming decoders == flashlight on random emissions (same best path)
 rng = np.random.default_rng(0); V = 40
 for trial in range(20):

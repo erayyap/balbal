@@ -91,6 +91,8 @@ def main():
     p.add_argument('--model', choices=T.M.MODELS, default=None, help='default: MODEL_DIR/model.json')
     p.add_argument('--runtime', choices=('fast', 'onnx'), default='fast')
     p.add_argument('--lm-dir', type=Path, default=None, help='default: MODEL_DIR/lm')
+    p.add_argument('--domain-lm', type=Path, default=None, help='a domain LM directory (training/build_lm.py) mixed into the KenLM')
+    p.add_argument('--domain-weight', type=float, default=None, help='its weight in the mix, 0-1 (default 0.3)')
     p.add_argument('--host', default='127.0.0.1'); p.add_argument('--port', type=int, default=8791)
     p.add_argument('--threads', type=int, default=8, help='threads per worker')
     p.add_argument('--workers', type=int, default=1, help='ONNX sessions (one compute thread each); KenLM is shared')
@@ -101,7 +103,8 @@ def main():
     p.add_argument('--left', type=float, default=8., help='window mode'); p.add_argument('--first-right', type=float, default=1.6, help='window mode')
     a = p.parse_args()
     app = web.Application()
-    first = T.Engine(a.model_dir, a.model, a.runtime, a.threads, lm_dir=a.lm_dir)
+    settings = {k: v for k, v in dict(domain_lm=a.domain_lm and str(a.domain_lm), domain_weight=a.domain_weight).items() if v is not None}
+    first = T.Engine(a.model_dir, a.model, a.runtime, a.threads, lm_dir=a.lm_dir, settings=settings)
     app['engines'] = [first] + [T.Engine(a.model_dir, a.model, a.runtime, a.threads, share=first) for _ in range(a.workers - 1)]
     app['pools'] = [ThreadPoolExecutor(1) for _ in app['engines']]; app['next'] = itertools.count()
     cfg = dict(mode=a.mode, chunk=a.chunk, right=a.right, endpoint=a.endpoint, max_segment=a.max_segment or (5. if a.mode == 'segment' else 20.))

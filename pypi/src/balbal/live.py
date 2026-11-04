@@ -127,7 +127,7 @@ def main(args):
     from .engine import Model
     printer = Printer(args.json, args.timestamps)
     with redirect_stdout(sys.stderr):
-        model = Model(args.model, args.runtime, args.threads, args.model_dir, args.revision)
+        model = Model(args.model, args.runtime, args.threads, args.model_dir, args.revision, settings=getattr(args, 'settings', None))
     options = {k: v for k, v in dict(chunk=args.chunk, right=args.right, endpoint=args.endpoint, max_segment=args.max_segment).items()
                if v is not None}
     stream = model.stream(args.mode, hotwords=args.hotwords or None, itn=not args.no_itn, **options)

@@ -3,7 +3,10 @@
 // repeated frames, blanks, BOS and EOS receive no length reward.
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <algorithm>
 #include <climits>
+#include <cmath>
+#include <stdexcept>
 #include "flashlight/lib/text/decoder/lm/LM.h"
 
 namespace py = pybind11;
@@ -27,6 +30,58 @@ class TokenBonusLM : public LM {
  private:
   LMPtr base_;
   float bonus_;
+};
+
+// Linear interpolation of two token LMs over the same vocabulary, 2026-11-04: p = (1 - w) p_base + w p_domain, returned in log10
+// like KenLM. Meant for a small domain LM (training/build_lm.py on in-domain text) next to the general one: a token the domain LM
+// has not seen keeps (1 - w) of the general LM's probability instead of the domain LM's <unk> score. The result is <= 0 like a
+// log10 probability, so the fast decoder's bound on the LM score holds unchanged. States pair the two LMs' states and mirror the
+// state tree (one cached child per token), so hypotheses merge exactly as they would under one LM.
+struct MixState : LMState {
+  LMStatePtr base, domain;
+};
+
+class MixLM : public LM {
+ public:
+  MixLM(LMPtr base, LMPtr domain, double weight) : base_(std::move(base)), domain_(std::move(domain)) {
+    if (!(weight > 0 && weight < 1)) throw std::invalid_argument("MixLM weight must be in (0, 1)");
+    logBase_ = std::log10(1 - weight); logDomain_ = std::log10(weight);
+  }
+  LMStatePtr start(bool empty) override {
+    auto state = std::make_shared<MixState>();
+    state->base = base_->start(empty); state->domain = domain_->start(empty);
+    return state;
+  }
+  std::pair<LMStatePtr, float> score(const LMStatePtr& state, int token) override {
+    auto in = std::static_pointer_cast<MixState>(state);
+    auto b = base_->score(in->base, token), d = domain_->score(in->domain, token);
+    auto out = in->child<MixState>(token);
+    if (!out->base) { out->base = b.first; out->domain = d.first; }
+    return {out, mix(b.second, d.second)};
+  }
+  std::pair<LMStatePtr, float> finish(const LMStatePtr& state) override {
+    auto in = std::static_pointer_cast<MixState>(state);
+    auto b = base_->finish(in->base), d = domain_->finish(in->domain);
+    auto out = in->child<MixState>(INT_MIN);
+    if (!out->base) { out->base = b.first; out->domain = d.first; }
+    return {out, mix(b.second, d.second)};
+  }
+  void updateCache(std::vector<LMStatePtr> states) override {
+    std::vector<LMStatePtr> base, domain;
+    base.reserve(states.size()); domain.reserve(states.size());
+    for (auto& s : states) {
+      auto m = std::static_pointer_cast<MixState>(s);
+      base.push_back(m->base); domain.push_back(m->domain);
+    }
+    base_->updateCache(std::move(base)); domain_->updateCache(std::move(domain));
+  }
+  float mix(float b, float d) const {   // log10((1 - w) 10^b + w 10^d)
+    double x = b + logBase_, y = d + logDomain_, hi = std::max(x, y), lo = std::min(x, y);
+    return float(hi + std::log10(1 + std::pow(10.0, lo - hi)));
+  }
+ private:
+  LMPtr base_, domain_;
+  double logBase_, logDomain_;
 };
 
 // Per-request hotword (keyword) biasing, 2026-10-15. Wraps any LM with a trie over token sequences of the
@@ -120,6 +175,9 @@ PYBIND11_MODULE(ctc_lm_bonus, m) {
   py::module_::import("flashlight.lib.text.decoder");
   py::class_<TokenBonusLM, LM, std::shared_ptr<TokenBonusLM>>(m, "TokenBonusLM")
       .def(py::init<LMPtr, float>());
+  py::class_<MixLM, LM, std::shared_ptr<MixLM>>(m, "MixLM")
+      .def(py::init<LMPtr, LMPtr, double>())
+      .def("mix", &MixLM::mix);
   py::class_<HotwordLM, LM, std::shared_ptr<HotwordLM>>(m, "HotwordLM")
       .def(py::init<LMPtr, const std::vector<std::vector<int>>&, const std::vector<std::vector<float>>&>())
       .def_property_readonly("nodes", &HotwordLM::nodes);

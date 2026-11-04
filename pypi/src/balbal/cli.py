@@ -6,6 +6,7 @@
   balbal run --format srt -o subs/ videos/   one subtitle file per audio / video file of a folder (txt, json, srt, vtt)
   balbal run --jobs 4 -o out/ calls/         four processes at once (CPU threads are split between them)
   balbal run --hotwords "Eray,Hasan" call.wav
+  balbal run --domain-lm my-lm/ notes.wav    a domain KenLM (training/build_lm.py on your own text) mixed into the general one
   balbal run --model owner/name speech.wav   a model trained on a balbal architecture (Hugging Face repo id or local folder)
   balbal download [--model manas]            fetch the model files now (e.g. while building an image)
   balbal live [--model manas]                live microphone transcription (pip install 'balbal[live]')
@@ -32,6 +33,22 @@ def model_options(p):
     p.add_argument('--revision', default=None, help='Hugging Face revision (default: the tested one, main for other repos)')
 
 
+def lm_options(p):
+    p.add_argument('--domain-lm', type=Path, default=None,
+                   help='a domain KenLM directory (model.binary + the model\'s tokenizer.model, e.g. from training/build_lm.py) mixed '
+                        'into the general LM')
+    p.add_argument('--domain-weight', type=float, default=None, help='its weight in the mix, 0-1 (default 0.3)')
+
+
+def lm_settings(args):
+    """Decoder settings of --domain-lm / --domain-weight, or None."""
+    if args.domain_lm is None and args.domain_weight is None: return None
+    settings = {}
+    if args.domain_lm is not None: settings['domain_lm'] = str(args.domain_lm.resolve())
+    if args.domain_weight is not None: settings['domain_weight'] = args.domain_weight
+    return settings
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] not in COMMANDS and not argv[0].startswith('-'): argv.insert(0, 'run')   # balbal speech.wav
@@ -50,12 +67,14 @@ def main(argv=None):
     r.add_argument('--output-dir', '-o', type=Path, default=None, help='write one file per input here (folder structure kept)')
     r.add_argument('--skip-existing', action='store_true', help='with --output-dir: skip inputs whose output file exists')
     r.add_argument('--jobs', '-j', type=int, default=1, help='processes transcribing at once (default 1)')
+    lm_options(r)
     d = sub.add_parser('download', help='download the model files without transcribing')
     model_options(d)
     lv = sub.add_parser('live', help="live transcription from the microphone (pip install 'balbal[live]') or a file played as if live")
     model_options(lv)
     lv.add_argument('--model-dir', type=Path, default=None, help='a local model directory instead of the download')
     lv.add_argument('--threads', '-t', type=int, default=None, help='CPU threads (default: BALBAL_THREADS, else min(8, CPU count))')
+    lm_options(lv)
     lv.add_argument('--file', type=Path, default=None, help='play this audio file as if live instead of the microphone')
     lv.add_argument('--speed', type=float, default=1., help='--file playback speed (1 = real time, 0 = as fast as possible)')
     lv.add_argument('--device', default=None, help='input device (number or name part; python -m sounddevice lists them)')
@@ -83,6 +102,7 @@ def main(argv=None):
     s.add_argument('--max-mb', type=int, default=25, help='largest accepted upload in MB (default 25, as OpenAI)')
     s.add_argument('--queue', type=int, default=16, help='requests allowed to wait for a worker before 503 (default 16)')
     s.add_argument('--max-streams', type=int, default=8, help='live WebSocket streams open at once (default 8)')
+    lm_options(s)
     y = sub.add_parser('wyoming', help="speech-to-text for Home Assistant over the Wyoming protocol (pip install 'balbal[wyoming]')")
     y.add_argument('--model', '-m', action='append', default=None,
                    help='model(s) to serve (name, folder or repo id), repeatable; the first is the default')
@@ -95,6 +115,9 @@ def main(argv=None):
     y.add_argument('--no-itn', action='store_true', help='keep numbers as spoken words (default: digits, for Turkish models)')
     y.add_argument('--keep-no-speech', action='store_true', help='return the text of commands without confident speech (default: empty)')
     args = p.parse_args(argv)
+    if args.command in ('run', 'live', 'serve'):
+        if args.domain_lm is not None and not args.domain_lm.is_dir(): p.error(f'no such directory: {args.domain_lm}')
+        args.settings = lm_settings(args)
 
     if args.command == 'wyoming':
         from .wyoming_server import serve as wyoming
@@ -105,7 +128,7 @@ def main(argv=None):
     if args.command == 'serve':
         from .server import serve
         serve(args.model or ['balbal-v2'], args.host, args.port, max(1, args.workers), args.threads, args.runtime, args.api_key, args.max_mb,
-              max(0, args.queue), max(0, args.max_streams))
+              max(0, args.queue), max(0, args.max_streams), settings=args.settings)
         return
 
     if args.command == 'live':

@@ -65,15 +65,16 @@ class Pool:
     (live streams stay on the worker whose Model they were made from). models: what to load (registry names, folders, repo ids);
     self.models: their display names (the keys of a worker), first = default."""
 
-    def __init__(self, models, workers, threads, runtime, backlog):
+    def __init__(self, models, workers, threads, runtime, backlog, settings=None):
         self.backlog, first = backlog, {}
         for source in models:
-            m = Model(source, runtime, threads)
+            m = Model(source, runtime, threads, settings=settings)
             if m.model in first: raise ValueError(f'two served models are both named {m.model!r}')
             first[m.model] = m
         self.models = list(first)
         self.loaded = first
-        self.workers = [first] + [{name: Model(m.source, m.runtime, threads) for name, m in first.items()} for _ in range(workers - 1)]
+        self.workers = [first] + [{name: Model(m.source, m.runtime, threads, settings=settings) for name, m in first.items()}
+                                  for _ in range(workers - 1)]
         self.locks = [threading.Lock() for _ in self.workers]
         self.free = queue.Queue()
         for i in range(len(self.workers)): self.free.put(i)
@@ -123,7 +124,7 @@ class BusyError(Exception):
 
 
 def create_app(models=('balbal-v2',), workers=1, threads=None, runtime='fast', api_key=None, max_bytes=25 << 20, backlog=16,
-               max_streams=8):
+               max_streams=8, settings=None):
     try:
         from fastapi import FastAPI, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
         from fastapi.concurrency import run_in_threadpool
@@ -135,7 +136,7 @@ def create_app(models=('balbal-v2',), workers=1, threads=None, runtime='fast', a
     sources = [str(m) for m in models] or ['balbal-v2']
     threads = threads or max(1, default_threads() // workers)
     print(f'balbal: loading {", ".join(sources)} ({workers} worker(s) x {threads} thread(s), {runtime} runtime)', file=sys.stderr, flush=True)
-    pool = Pool(sources, workers, threads, runtime, backlog)
+    pool = Pool(sources, workers, threads, runtime, backlog, settings)
     models, default = pool.models, pool.models[0]
     app = FastAPI(title='balbal', version=__version__)
 
@@ -296,7 +297,7 @@ async def _pump(ws, stream, run, disconnect):
 
 
 def serve(models, host='127.0.0.1', port=8000, workers=1, threads=None, runtime='fast', api_key=None, max_mb=25, backlog=16,
-          max_streams=8):
+          max_streams=8, settings=None):
     try:
         import uvicorn
     except ImportError:
@@ -304,5 +305,5 @@ def serve(models, host='127.0.0.1', port=8000, workers=1, threads=None, runtime=
     api_key = api_key or os.getenv('BALBAL_API_KEY') or None
     if not api_key and host not in LOCAL_HOSTS:
         print(f'balbal: WARNING: serving on {host} without an API key (set --api-key or BALBAL_API_KEY)', file=sys.stderr, flush=True)
-    app = create_app(models, workers, threads, runtime, api_key, max_mb << 20, backlog, max_streams)
+    app = create_app(models, workers, threads, runtime, api_key, max_mb << 20, backlog, max_streams, settings)
     uvicorn.run(app, host=host, port=port, log_level='info')

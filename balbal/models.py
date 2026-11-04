@@ -58,7 +58,12 @@ def refiner_config(name, model_dir=None):
 
 
 def decoder_config(name, model_dir=None):
-    return json.loads(config_path(name, 'decoder.json', model_dir).read_text())
+    """Decoder settings; a relative domain_lm (domain LM directory) in a model folder's own decoder.json is relative to that folder."""
+    path = config_path(name, 'decoder.json', model_dir)
+    settings = json.loads(path.read_text())
+    if settings.get('domain_lm') and not Path(settings['domain_lm']).is_absolute():
+        settings['domain_lm'] = str(path.parent / settings['domain_lm'])
+    return settings
 
 
 def describe(model_dir=None, name=None):
