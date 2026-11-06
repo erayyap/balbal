@@ -160,7 +160,7 @@ def run(args, name, model, head_prefix, separate_head, eval_bf16):
     def emit(event, **kw):
         if rank: return
         row = dict(event=event, at=round(time.time(), 1), **kw); print(json.dumps(row, ensure_ascii=False), flush=True)
-        with (out / 'metrics.jsonl').open('a') as f: f.write(json.dumps(row, ensure_ascii=False) + '\n')
+        with (out / 'metrics.jsonl').open('a', encoding='utf-8') as f: f.write(json.dumps(row, ensure_ascii=False) + '\n')
 
     torch.set_num_threads(args.threads); torch.set_float32_matmul_precision('highest')
     torch.backends.cuda.matmul.allow_tf32 = torch.backends.cudnn.allow_tf32 = args.tf32; torch.backends.cudnn.benchmark = False
@@ -184,7 +184,7 @@ def run(args, name, model, head_prefix, separate_head, eval_bf16):
         t = model.tokenizer.text_to_ids(r['text']) if r['text'].strip() else []
         if D.ctc_frames_needed(t) > int(r['duration_seconds'] * 16000) // hop - 2: counts['ctc_infeasible'] = counts.get('ctc_infeasible', 0) + 1; continue
         keep.append(r); labels.append(t)
-    rows = keep; dev = [json.loads(l) for l in open(args.dev)] if args.dev else []
+    rows = keep; dev = [json.loads(l) for l in open(args.dev, encoding='utf-8')] if args.dev else []
     batch, micro = args.batch, args.micro
     accum = batch // (micro * world)
     if accum < 1 or accum * micro * world != batch: raise SystemExit('--micro x world size must divide --batch')

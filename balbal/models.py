@@ -54,13 +54,13 @@ def config_path(name, filename, model_dir=None):
 
 
 def refiner_config(name, model_dir=None):
-    return json.loads(config_path(name, 'refiner.json', model_dir).read_text())
+    return json.loads(config_path(name, 'refiner.json', model_dir).read_text(encoding='utf-8'))
 
 
 def decoder_config(name, model_dir=None):
     """Decoder settings; a relative domain_lm (domain LM directory) in a model folder's own decoder.json is relative to that folder."""
     path = config_path(name, 'decoder.json', model_dir)
-    settings = json.loads(path.read_text())
+    settings = json.loads(path.read_text(encoding='utf-8'))
     if settings.get('domain_lm') and not Path(settings['domain_lm']).is_absolute():
         settings['domain_lm'] = str(path.parent / settings['domain_lm'])
     return settings
@@ -70,7 +70,7 @@ def describe(model_dir=None, name=None):
     """model.json of a model folder with the defaults filled in: {'model', 'name', 'languages', 'itn', 'long_windows'}.
     name: the family, overriding model.json's "model" (default: model.json, else balbal-v2)."""
     path = Path(model_dir) / 'model.json' if model_dir else None
-    info = json.loads(path.read_text()) if path is not None and path.exists() else {}
+    info = json.loads(path.read_text(encoding='utf-8')) if path is not None and path.exists() else {}
     family = check_name(name or info.get('model') or 'balbal-v2')
     languages = info.get('languages') or FAMILY_LANGUAGES[family]
     if isinstance(languages, str): languages = [languages]
