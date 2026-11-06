@@ -13,9 +13,8 @@ uv pip install --no-deps -r requirements/full.txt
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"   # 2.10.0+cu128 True
 ```
 
-All wheels in `requirements/full.txt` install on Windows, flashlight-text included, so no C++ compiler is needed for training.
-
-Run the scripts from the repository root with `PYTHONPATH` set to it (`training` is imported as a package).
+`kenlm==0.3.0` and `texterrors==0.5.1` have no Windows wheels on PyPI and build from source, so install the Microsoft C++
+Build Tools (the "Desktop development with C++" workload) before installing `requirements/full.txt`.
 
 ## Text encoding
 
