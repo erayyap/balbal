@@ -83,10 +83,10 @@ def test_cli_version(capsys):
 
 def test_batch_expand(tmp_path):
     from balbal.batch import expand
-    (tmp_path / 'a').mkdir(); (tmp_path / 'a' / 'x.wav').write_bytes(b''); (tmp_path / 'a' / 'notes.txt').write_text('')
+    (tmp_path / 'a').mkdir(); (tmp_path / 'a' / 'x.wav').write_bytes(b''); (tmp_path / 'a' / 'notes.txt').write_text('', encoding='utf-8')
     (tmp_path / 'y.mp3').write_bytes(b'')
     got = expand([tmp_path])
-    assert [str(rel) for _, rel in got] == ['a/x.wav', 'y.mp3']
+    assert [rel.as_posix() for _, rel in got] == ['a/x.wav', 'y.mp3']
 
 
 def test_language_rules():
@@ -106,7 +106,7 @@ def test_resolve_and_model_info(tmp_path):
     assert hub.resolve(str(tmp_path)) == ('local', tmp_path)
     with pytest.raises(ValueError): hub.resolve('not a model')
     assert model_info(tmp_path) == dict(model='balbal-v2', name='balbal-v2', languages=['tr'], itn='tr', long_windows=(30., 10.))
-    (tmp_path / 'model.json').write_text(json.dumps({'model': 'balbal-v2-manas', 'languages': ['az'], 'name': 'az-model'}))
+    (tmp_path / 'model.json').write_text(json.dumps({'model': 'balbal-v2-manas', 'languages': ['az'], 'name': 'az-model'}), encoding='utf-8')
     info = model_info(tmp_path)
     assert info['model'] == 'balbal-v2-manas' and info['name'] == 'az-model' and info['languages'] == ['az'] and info['itn'] == 'az'
     assert model_info(tmp_path, name='owner/x')['name'] == 'az-model'

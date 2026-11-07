@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "balbal"
-version = "0.4.0"
+version = "0.5.0"
 description = "Open Turkish speech recognition on CPU: balbal-v2 and balbal-v2-manas (and models trained on their architectures), weights fetched from Hugging Face on first use."
 readme = "README.md"
 license = "Apache-2.0"
@@ -19,6 +19,8 @@ classifiers = [
     "Natural Language :: Turkish",
     "Natural Language :: English",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -56,4 +58,4 @@ include-package-data = false
 
 [tool.setuptools.package-data]
 balbal = ["configs/*/decoder.json", "licenses/*", "web/*.html"]
-"balbal._native" = ["*.so"]
+"balbal._native" = ["*.so", "*.pyd", "*.dll", "*.dylib"]

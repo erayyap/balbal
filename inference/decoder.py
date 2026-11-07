@@ -54,6 +54,8 @@ DOMAIN_WEIGHT = 0.3
 def load_lm(lm_dir, dictionary, settings):
     """The KenLM of lm_dir, or its linear mix with the domain LM of settings['domain_lm'] (a directory with model.binary and the same
     tokenizer.model; weight settings['domain_weight'], default 0.3). Weight 0 = the general LM alone, 1 = the domain LM alone."""
+    if sys.platform == 'win32' and (HERE / 'native' / 'kenlm.dll').exists():   # flashlight-text's Windows KenLM module needs it
+        import ctypes; ctypes.WinDLL(str(HERE / 'native' / 'kenlm.dll'))       # (build_native.py builds it)
     from flashlight.lib.text.decoder import KenLM
     lm_dir = Path(lm_dir)
     general = KenLM(str(lm_dir / 'model.binary'), dictionary)

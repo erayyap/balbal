@@ -19,7 +19,7 @@ This repository holds the code; the weights are on Hugging Face. Benchmarks, a b
 ## Quick start
 
 ```bash
-pip install balbal                            # Linux x86-64, Python 3.11 or 3.12
+pip install balbal                            # Linux x86-64, macOS (Apple Silicon), Windows x86-64; Python 3.11 or 3.12
 balbal run speech.wav                         # balbal-v2; the model downloads from Hugging Face on the first run
 balbal run --model manas --json speech.mp3    # balbal-v2-manas; text + per-word timestamps and confidences
 balbal run -f srt -o subs/ videos/            # subtitles for every audio / video file in a folder
@@ -63,7 +63,7 @@ balbal-v1/           balbal-v1 code, kept for reproducibility
 
 ## Install
 
-Python 3.12 on Linux x86-64.
+Python 3.12 on Linux x86-64 (macOS and Windows: see the notes after the build commands).
 
 ```bash
 # CPU inference only (runtimes fast + onnx, streaming)
@@ -91,8 +91,15 @@ ANDROID_NDK=/path/to/ndk inference/kernels/build_android.sh   # Android arm64 ->
 
 On macOS (Apple Silicon) the same two scripts build with the Xcode Command Line Tools (`xcode-select --install`):
 `build_native.py` writes `inference/native/*.so`, `build.sh` writes `inference/kernels/libbalbal_ops.dylib`, and the runtime
-and `test_kernels.py` load the `.dylib`. The PyPI wheels are Linux x86_64 only; to run the package from `pypi/src`, copy
-`inference/native/ctc_*.so` into `pypi/src/balbal/_native/` and set `BALBAL_OPS_LIB` to the `.dylib`.
+and `test_kernels.py` load the `.dylib`.
+
+On Windows, `build_native.py` compiles with MSVC (Visual Studio Build Tools, "Desktop development with C++"; flashlight-text's
+Windows wheel is an MSVC build, so the binding ABI must match) and writes `inference/native/*.pyd`, plus `kenlm.dll`, built from
+KenLM: flashlight-text's Windows KenLM module needs it, but its wheel does not include it. `build.sh` runs in Git Bash
+with LLVM's `clang++` and writes `inference/kernels/balbal_ops.dll`. Training on Windows: [`training/WINDOWS.md`](training/WINDOWS.md).
+
+The PyPI wheels (Linux x86-64, macOS arm64, Windows x86-64) are built by `pypi/build_wheels.sh` (manylinux) and
+`pypi/build_wheel.py` (macOS, Windows).
 
 ## Model directory
 

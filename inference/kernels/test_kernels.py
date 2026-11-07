@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Unit test of the custom operators in libbalbal_ops.so against numpy references, on random inputs:
+"""Unit test of the custom operators in libbalbal_ops.so (.dylib on macOS, balbal_ops.dll on Windows) against numpy references, on random inputs:
   PkmRead      vs the PKM read in float64 (max abs difference, should be ~1e-6)
   PkmReadQ8    vs the same reference on the de-quantized int8 table (kernel exactness) and on the float32 table (quantization error)
   RelPosScore  vs onnxruntime's own GatherElements + Add + Div chain (must be bit-identical)
   python inference/kernels/test_kernels.py"""
+import os
 import sys
 from pathlib import Path
 
@@ -11,7 +12,8 @@ import numpy as np
 import onnxruntime as ort
 from onnx import TensorProto, helper
 
-LIB = str(Path(__file__).resolve().parent / ('libbalbal_ops.dylib' if sys.platform == 'darwin' else 'libbalbal_ops.so'))
+NAME = {'darwin': 'libbalbal_ops.dylib', 'win32': 'balbal_ops.dll'}.get(sys.platform, 'libbalbal_ops.so')
+LIB = os.getenv('BALBAL_OPS_LIB') or str(Path(__file__).resolve().parent / NAME)   # BALBAL_OPS_LIB: test another build
 F, I8 = TensorProto.FLOAT, TensorProto.INT8
 
 

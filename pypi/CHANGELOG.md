@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+- Wheels for macOS (Apple Silicon, macOS 14+) and Windows x86-64, Python 3.11 and 3.12, with the native beam-search decoder and the
+  custom onnxruntime operators compiled in (Windows: x86-64-v2, AVX2 and AVX-512 builds, chosen at run time as on Linux). macOS build
+  support by Ali Kösekahya (#3). The Windows wheel also carries `kenlm.dll` (KenLM, LGPL), which flashlight-text's Windows KenLM
+  module needs but its own wheel does not include.
+- Windows fixes: model.json, decoder.json and the demo page are read as UTF-8; `balbal serve` decodes MP3 / M4A / video uploads
+  through a closed temporary file; `balbal run` output redirected to a file or another program is written as UTF-8.
+- Linux: the native code is unchanged from 0.4.0, and so is the output.
+
 ## 0.4.0
 
 - Domain LM: `--domain-lm DIR` / `--domain-weight W` (`balbal run`, `live`, `serve`), `settings={'domain_lm': ..., 'domain_weight': ...}`

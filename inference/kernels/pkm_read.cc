@@ -270,7 +270,13 @@ struct PkmOp : Ort::CustomOpBase<PkmOp<Q8>, PkmKernel<Q8>> {
 
 void AddRelPosOps(Ort::CustomOpDomain& domain);   // relpos.cc (built without -ffast-math)
 
-extern "C" OrtStatus* ORT_API_CALL RegisterCustomOps(OrtSessionOptions* options, const OrtApiBase* api_base) {
+#ifdef _WIN32
+#define BALBAL_EXPORT __declspec(dllexport)   // the only export; on Linux / macOS the link step limits the exports
+#else
+#define BALBAL_EXPORT
+#endif
+
+extern "C" BALBAL_EXPORT OrtStatus* ORT_API_CALL RegisterCustomOps(OrtSessionOptions* options, const OrtApiBase* api_base) {
   Ort::InitApi(api_base->GetApi(ORT_API_VERSION));
   static Ort::CustomOpDomain domain{"balbal"};
   static PkmOp<false> op;

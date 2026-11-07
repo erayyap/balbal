@@ -19,6 +19,10 @@ runs/
 inference/kernels/android-arm64/
 *.so
 *.dylib
+*.dll
+*.pyd
+*.lib
+*.exp
 __pycache__/
 *.pyc
 .venv*/

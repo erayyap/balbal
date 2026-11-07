@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import sys
 import time
 import warnings
 
@@ -53,7 +54,7 @@ def model_info(model_dir, family=None, name=None):
     """model.json of a model folder with the defaults filled in: {'model' (family), 'name', 'languages', 'itn', 'long_windows'}.
     family: used when model.json has no "model"; name: the display name when model.json has no "name" (default: the family)."""
     f = Path(model_dir) / 'model.json'
-    info = json.loads(f.read_text()) if f.exists() else {}
+    info = json.loads(f.read_text(encoding='utf-8')) if f.exists() else {}
     family = hub.model_name(info.get('model') or family or 'balbal-v2')
     languages = info.get('languages') or FAMILY_LANGUAGES[family]
     if isinstance(languages, str): languages = [languages]
@@ -64,8 +65,9 @@ def model_info(model_dir, family=None, name=None):
 
 def cpu_level():
     """x86-64 micro-architecture level of this CPU for the operator library: 'v4' (AVX-512), 'v3' (AVX2 + FMA) or 'v2'."""
+    if sys.platform != 'linux': return _cpu_level_numpy()
     try:
-        flags = set(next(line for line in open('/proc/cpuinfo') if line.startswith('flags')).split(':', 1)[1].split())
+        flags = set(next(line for line in open('/proc/cpuinfo', encoding='utf-8') if line.startswith('flags')).split(':', 1)[1].split())
     except (OSError, StopIteration):
         return 'v2'
     if {'avx512f', 'avx512bw', 'avx512cd', 'avx512dq', 'avx512vl'} <= flags: return 'v4'
@@ -73,9 +75,27 @@ def cpu_level():
     return 'v2'
 
 
+def _cpu_level_numpy():
+    """Windows: numpy's run-time CPU feature table (CPUID, with the OS's AVX / AVX-512 state support checked)."""
+    try:
+        from numpy._core._multiarray_umath import __cpu_features__ as has
+    except ImportError:
+        try:
+            from numpy.core._multiarray_umath import __cpu_features__ as has
+        except ImportError:
+            return 'v2'
+    if has.get('AVX512_SKX'): return 'v4'   # AVX512 F + CD + BW + DQ + VL
+    if all(has.get(k) for k in ('AVX', 'AVX2', 'FMA3', 'F16C')): return 'v3'
+    return 'v2'
+
+
 def ops_library():
-    """The custom operator library for this CPU (BALBAL_OPS_LIB overrides)."""
-    return Path(os.getenv('BALBAL_OPS_LIB') or HERE / '_native' / f'libbalbal_ops_{cpu_level()}.so')
+    """The custom operator library for this CPU (BALBAL_OPS_LIB overrides): libbalbal_ops_{v2,v3,v4}.so on Linux,
+    balbal_ops_{v2,v3,v4}.dll on Windows, libbalbal_ops.dylib on macOS (arm64)."""
+    if os.getenv('BALBAL_OPS_LIB'): return Path(os.environ['BALBAL_OPS_LIB'])
+    if sys.platform == 'darwin': return HERE / '_native' / 'libbalbal_ops.dylib'
+    if sys.platform == 'win32': return HERE / '_native' / f'balbal_ops_{cpu_level()}.dll'
+    return HERE / '_native' / f'libbalbal_ops_{cpu_level()}.so'
 
 
 def ort_session(path, threads, custom_ops=False):
@@ -130,8 +150,8 @@ class Model:
         self.language = lang.get(self.languages[0])
         self._itn = lang.itn_functions(self.info['itn'])
         own = self.model_dir / 'decoder.json'
-        packaged = json.loads((HERE / 'configs' / self.family / 'decoder.json').read_text())
-        mine = json.loads(own.read_text()) if kind != 'registry' and own.exists() else {}
+        packaged = json.loads((HERE / 'configs' / self.family / 'decoder.json').read_text(encoding='utf-8'))
+        mine = json.loads(own.read_text(encoding='utf-8')) if kind != 'registry' and own.exists() else {}
         if mine.get('domain_lm') and not Path(mine['domain_lm']).is_absolute(): mine['domain_lm'] = str(self.model_dir / mine['domain_lm'])
         self.settings = dict(packaged, **mine, **(settings or {}))
         self.runtime = runtime

@@ -2,13 +2,15 @@ name: pypi package
 
 on:
   push:
-    paths: ['pypi/**', 'inference/kernels/**', 'inference/native/**', '.github/workflows/pypi.yml']
+    paths: ['pypi/**', 'inference/kernels/**', 'inference/native/**', 'inference/build_native.py', '.github/workflows/pypi.yml',
+            '.github/scripts/**']
   pull_request:
-    paths: ['pypi/**', 'inference/kernels/**', 'inference/native/**', '.github/workflows/pypi.yml']
+    paths: ['pypi/**', 'inference/kernels/**', 'inference/native/**', 'inference/build_native.py', '.github/workflows/pypi.yml',
+            '.github/scripts/**']
   workflow_dispatch:
 
 jobs:
-  wheels:
+  wheels-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,17 +18,51 @@ jobs:
         run: docker run --rm -v "$PWD":/io -w /io/pypi quay.io/pypa/manylinux_2_28_x86_64 ./build_wheels.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels
+          name: wheels-linux
+          path: pypi/wheelhouse/*.whl
+
+  wheels:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2022]
+        python: ['3.11', '3.12']
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Build tools
+        run: python -m pip install pybind11==2.10.4 flashlight-text==0.0.7 setuptools build==1.3.0 wheel==0.45.1 numpy onnxruntime onnx==1.17.0
+      - name: Build the wheel (decoder extensions checked against flashlight-text)
+        run: python pypi/build_wheel.py
+      - name: Custom operators vs numpy and the stock operators (every level this CPU runs)
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then libs=libbalbal_ops.dylib
+          else libs="balbal_ops_v2.dll balbal_ops_v3.dll"
+               python -c "import numpy._core._multiarray_umath as m, sys; sys.exit(0 if m.__cpu_features__.get('AVX512_SKX') else 1)" && libs="$libs balbal_ops_v4.dll"
+          fi
+          for lib in $libs; do echo "== $lib"; BALBAL_OPS_LIB="$PWD/pypi/src/balbal/_native/$lib" python inference/kernels/test_kernels.py; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.python }}
           path: pypi/wheelhouse/*.whl
 
   test:
-    needs: wheels
-    runs-on: ubuntu-latest
+    needs: [wheels-linux, wheels]
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-15, windows-2022]
         python: ['3.11', '3.12']
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
+        shell: bash
         working-directory: pypi
     steps:
       - uses: actions/checkout@v4
@@ -35,24 +71,72 @@ jobs:
           python-version: ${{ matrix.python }}
       - uses: actions/download-artifact@v4
         with:
-          name: wheels
+          pattern: wheels-*
+          merge-multiple: true
           path: wheels
       - name: Install the wheel
         run: |
           tag=cp$(echo "${{ matrix.python }}" | tr -d .)
-          pip install "$(ls ../wheels/balbal-*-$tag-$tag-*.whl)[server,wyoming]" pytest httpx
+          case "$RUNNER_OS" in Linux) plat=manylinux;; macOS) plat=macosx;; Windows) plat=win_amd64;; esac
+          wheel=$(ls ../wheels/balbal-*-$tag-$tag-*.whl | grep $plat)
+          echo "$wheel"
+          python -m pip install "$wheel[server,wyoming]" pytest httpx
       - name: Unit tests
-        run: pytest -q tests
+        run: python -X warn_default_encoding -m pytest -q tests
       - name: Cache the model files
         if: matrix.python == '3.12'
         uses: actions/cache@v4
         with:
           path: ~/.cache/balbal-models
-          key: balbal-models-${{ hashFiles('pypi/src/balbal/hub.py') }}
-      - name: Model tests (balbal-v2)
+          key: balbal-models-${{ runner.os }}-${{ hashFiles('pypi/src/balbal/hub.py') }}
+      - name: FLEURS Turkish test clips
+        if: matrix.python == '3.12'
+        run: python ../.github/scripts/fleurs_clips.py ../clips 16
+      - name: Model tests (balbal-v2, real speech)
         if: matrix.python == '3.12'
         env:
           BALBAL_TEST_MODELS: '1'
+          BALBAL_TEST_AUDIO: ../clips
           BALBAL_CACHE: ~/.cache/balbal-models
           BALBAL_THREADS: '2'
-        run: pytest -q tests/test_model.py
+        run: python -m pytest -q tests/test_model.py
+      - name: Transcripts for the cross-platform comparison (balbal-v2, balbal-v2-manas)
+        if: matrix.python == '3.12'
+        env:
+          BALBAL_CACHE: ~/.cache/balbal-models
+          BALBAL_THREADS: '2'
+        run: |
+          mkdir -p ../transcripts
+          for m in balbal-v2 balbal-v2-manas; do python ../.github/scripts/transcripts.py $m ../clips ../transcripts/$m-$RUNNER_OS.json; done
+          if [ "$RUNNER_OS" = Windows ]; then   # the AVX2 operator library too, on the same CPU
+            BALBAL_OPS_LIB="$(python -c 'import balbal, pathlib; print(pathlib.Path(balbal.__file__).parent / "_native" / "balbal_ops_v3.dll")')" \
+              python ../.github/scripts/transcripts.py balbal-v2-manas ../clips ../transcripts/balbal-v2-manas-Windows-v3.json
+          fi
+          balbal run -j 2 ../clips > ../transcripts/cli-$RUNNER_OS.txt   # CLI output redirected (not a console), 2 processes
+          head -3 ../transcripts/cli-$RUNNER_OS.txt
+      - uses: actions/upload-artifact@v4
+        if: matrix.python == '3.12'
+        with:
+          name: transcripts-${{ runner.os }}
+          path: transcripts/*.json
+
+  parity:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: transcripts-*
+          merge-multiple: true
+          path: transcripts
+      - name: Same text on Linux, macOS and Windows (balbal-v2), same text from both operator libraries on one CPU (manas)
+        run: |
+          python .github/scripts/transcripts.py --compare transcripts/balbal-v2-Linux.json transcripts/balbal-v2-macOS.json transcripts/balbal-v2-Windows.json
+          python .github/scripts/transcripts.py --compare transcripts/balbal-v2-manas-Windows.json transcripts/balbal-v2-manas-Windows-v3.json
+      - name: manas across CPUs (report only)
+        # onnxruntime's own kernels differ by CPU (AVX2 / AVX-512 / NEON); the 313M model's beam search flips some close calls
+        # (mostly punctuation / casing) with those float differences, with the same native code (0.4.0 does the same).
+        run: |
+          python .github/scripts/transcripts.py --compare transcripts/balbal-v2-manas-Windows.json transcripts/balbal-v2-manas-Linux.json \
+            transcripts/balbal-v2-manas-macOS.json || true

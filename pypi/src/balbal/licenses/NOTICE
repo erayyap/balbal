@@ -5,3 +5,7 @@ This product includes code licensed under the Apache License, Version 2.0 (see L
 Third-party licenses for flashlight-text and KenLM are in inference/licenses/ (and balbal-v1/inference/licenses/).
 inference/kernels/third_party/onnxruntime/ holds unmodified ONNX Runtime 1.30.0 header files, MIT License (LICENSE in that directory).
 configs/balbal-v2-manas/model_config.yaml derives from NVIDIA's stt_en_fastconformer_ctc_large model configuration (CC-BY-4.0).
+The Windows wheels also carry balbal/_native/kenlm.dll, built unmodified from KenLM (https://github.com/kpu/kenlm, commit
+4cb443e60b7bf2c0ddf3c745378f76cb59e254e5) for flashlight-text, whose Windows wheel needs it but does not include it. KenLM is
+LGPL 2.1 or later (kenlm-LICENSE, kenlm-COPYING.LESSER.3, kenlm-COPYING.3; util/double-conversion: kenlm-double-conversion-LICENSE);
+the DLL can be replaced with another build of the same source.

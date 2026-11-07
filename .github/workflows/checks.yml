@@ -1,0 +1,15 @@
+name: checks
+
+on:
+  push:
+    paths: ['**.py', '.github/workflows/checks.yml']
+  pull_request:
+    paths: ['**.py', '.github/workflows/checks.yml']
+
+jobs:
+  text-encoding:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every text file is opened with an explicit encoding (Windows defaults to the locale's code page)
+        run: python .github/scripts/check_text_encoding.py

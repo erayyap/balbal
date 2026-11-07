@@ -49,6 +49,7 @@ DOMAIN_WEIGHT = 0.3
 
 
 def _kenlm():
+    from . import _native   # noqa: F401  (Windows: loads the kenlm.dll flashlight-text's KenLM module needs)
     try:
         from flashlight.lib.text.decoder.kenlm import KenLM
     except ImportError:

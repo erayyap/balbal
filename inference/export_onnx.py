@@ -283,8 +283,8 @@ def main():
         res['onnxruntime'] = parity(lambda w: session.run(None, {'audio': w[None]})[0], waves, reference)
         res['export_seconds'] = round(time.time() - t0, 1); result[kind] = res
         print(json.dumps({kind: res}), flush=True)
-    (out / 'export.json').write_text(json.dumps(result, indent=1) + '\n')
-    (args.model_dir / 'model.json').exists() or (args.model_dir / 'model.json').write_text(json.dumps(dict(model=name)) + '\n')
+    (out / 'export.json').write_text(json.dumps(result, indent=1) + '\n', encoding='utf-8')
+    (args.model_dir / 'model.json').exists() or (args.model_dir / 'model.json').write_text(json.dumps(dict(model=name)) + '\n', encoding='utf-8')
 
 
 if __name__ == '__main__':

@@ -90,7 +90,7 @@ def save_configs(args, name):
     args.out.mkdir(parents=True, exist_ok=True)
     for f in ('refiner.json', 'model_config.yaml'): shutil.copy2(M.config_path(name, f, args.config_dir), args.out / f)
     info = dict(model=name, languages=list(M.head_languages(M.refiner_config(name, args.config_dir))))
-    (args.out / 'model.json').write_text(json.dumps(info) + '\n')
+    (args.out / 'model.json').write_text(json.dumps(info) + '\n', encoding='utf-8')
 
 
 def allreduce_grads(params, bucket=64 * 2 ** 20):
@@ -214,7 +214,7 @@ def run(args, name, model, head_prefix, separate_head, eval_bf16):
             {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, model=name, world=world, subsampling=sub,
             train_rows=len(rows), train_hours=round(sum(r['duration_seconds'] for r in rows) / 3600, 2), counts=counts,
             updates=total, updates_per_epoch=epoch_steps, eval_every=eval_every, accumulation=accum,
-            parameters=sum(q.numel() for q in model.parameters()), grad_comm=os.getenv('GRAD_COMM', 'fp32')), indent=1))
+            parameters=sum(q.numel() for q in model.parameters()), grad_comm=os.getenv('GRAD_COMM', 'fp32')), indent=1), encoding='utf-8')
 
     # evaluation
     @torch.inference_mode()
@@ -253,7 +253,7 @@ def run(args, name, model, head_prefix, separate_head, eval_bf16):
         best.sort(key=lambda b: (b['dev_wer'], b['step']))
         if any(b['step'] == step for b in best[:args.keep]): save_weights(state, d / f'step{step}.pt')
         for b in best[args.keep:]: Path(b['path']).unlink(missing_ok=True); Path(b['path'][:-3] + '.lang.pt').unlink(missing_ok=True)
-        del best[args.keep:]; (d / 'best.json').write_text(json.dumps(best, indent=1) + '\n')
+        del best[args.keep:]; (d / 'best.json').write_text(json.dumps(best, indent=1) + '\n', encoding='utf-8')
 
     def evaluate(step, train_seconds, loss_avg):
         t = time.monotonic(); m = measure()

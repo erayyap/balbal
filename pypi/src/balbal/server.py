@@ -54,9 +54,10 @@ def decode_upload(data, filename=''):
     except Exception:
         pass
     suffix = os.path.splitext(filename or '')[1][:10]
-    with tempfile.NamedTemporaryFile(suffix=suffix) as f:
-        f.write(data); f.flush()
-        return read_audio(f.name)
+    with tempfile.TemporaryDirectory() as folder:   # a closed file FFmpeg can open (Windows refuses a second open of an open temp file)
+        path = Path(folder) / ('upload' + suffix)
+        path.write_bytes(data)
+        return read_audio(path)
 
 
 class Pool:
@@ -241,7 +242,7 @@ def create_app(models=('balbal-v2',), workers=1, threads=None, runtime='fast', a
 
     @app.get('/', response_class=HTMLResponse)
     def demo():
-        return (Path(__file__).resolve().parent / 'web' / 'demo.html').read_text()
+        return (Path(__file__).resolve().parent / 'web' / 'demo.html').read_text(encoding='utf-8')
 
     return app
 

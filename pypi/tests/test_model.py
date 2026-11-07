@@ -2,6 +2,7 @@
 endpoints."""
 import io
 import json
+import shutil
 
 import numpy as np
 import pytest
@@ -60,7 +61,11 @@ def test_domain_lm(model, speech, tmp_path):
     for wave in speech:
         assert same.transcribe(wave)['text'] == model.transcribe(wave)['text']
     assert not isinstance(load(domain_lm=str(lm), domain_weight=0.).decoder.lm, MixLM)
-    (tmp_path / 'model.binary').symlink_to(lm / 'model.binary'); (tmp_path / 'tokenizer.model').write_bytes(b'other')
+    try:
+        (tmp_path / 'model.binary').symlink_to(lm / 'model.binary')
+    except OSError:   # Windows without symlink rights
+        shutil.copyfile(lm / 'model.binary', tmp_path / 'model.binary')
+    (tmp_path / 'tokenizer.model').write_bytes(b'other')
     with pytest.raises(ValueError, match='another tokenizer'):
         load(domain_lm=str(tmp_path))
 

@@ -4,3 +4,8 @@ wheelhouse/
 *.so
 __pycache__/
 *.egg-info/
+*.pyd
+*.dll
+*.dylib
+*.lib
+*.exp

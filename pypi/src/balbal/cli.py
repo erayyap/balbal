@@ -49,7 +49,16 @@ def lm_settings(args):
     return settings
 
 
+def utf8_output():
+    """Windows: output piped to a file or another program uses the code page (cp1252, cp1254...), which lacks letters such as ş
+    or ğ. Write it as UTF-8 (the console itself already takes any text)."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure') and (stream.encoding or '').lower().replace('-', '') != 'utf8':
+            stream.reconfigure(encoding='utf-8')
+
+
 def main(argv=None):
+    if sys.platform == 'win32': utf8_output()
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] not in COMMANDS and not argv[0].startswith('-'): argv.insert(0, 'run')   # balbal speech.wav
     p = argparse.ArgumentParser(prog='balbal', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)

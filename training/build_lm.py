@@ -86,7 +86,7 @@ def main():
                     if len(probes) < 48: probes.append(encoded)
         if not probes: raise ValueError('no LM text left (all rows empty, unrepresentable or held out)')
         arpa, binary = scratch / 'model.arpa', scratch / 'model.binary'
-        with corpus.open('rb') as source, (args.out / 'build.log').open('a') as log:
+        with corpus.open('rb') as source, (args.out / 'build.log').open('a', encoding='utf-8') as log:
             subprocess.run([tool('lmplz'), '-o', '6', '-S', args.memory, '-T', str(scratch) + '/', '--arpa', str(arpa),
                             '--discount_fallback', '--prune', '0', '0', '1', '1', '2', '2'],
                            stdin=source, stdout=log, stderr=log, check=True)
@@ -98,7 +98,7 @@ def main():
                       train_hashes={p.name: sha(p) for p in args.train + args.text}, quantized=args.quantize, heldout_hashes={p.name: sha(p) for p in args.heldout},
                       source_counts=dict(counts), tokens=token_count, excluded_exact_heldout_or_empty=dict(excluded),
                       corpus_sha256=sha(corpus), arpa_binary_max_error=delta, prune=[0, 0, 1, 1, 2, 2])
-        (args.out / 'complete.json').write_text(json.dumps(result, indent=1) + '\n')
+        (args.out / 'complete.json').write_text(json.dumps(result, indent=1) + '\n', encoding='utf-8')
         print(json.dumps(result, indent=1))
     finally:
         shutil.rmtree(scratch, ignore_errors=True)

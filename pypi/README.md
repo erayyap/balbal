@@ -167,9 +167,13 @@ docker run -p 10300:10300 -v balbal-models:/models balbal wyoming
 
 ## Platform
 
-Linux x86-64, Python 3.11 or 3.12. The wheel carries the native beam-search decoder and the custom onnxruntime operators of the
-fast graph (built for x86-64-v2, AVX2 and AVX-512 CPUs, chosen at run time). `runtime='onnx'` (`--runtime onnx`) runs the
-standard-operator graph instead.
+Linux x86-64, macOS (Apple Silicon, macOS 14+) and Windows x86-64, Python 3.11 or 3.12. The wheel carries the native beam-search
+decoder and the custom onnxruntime operators of the fast graph (on x86-64 built for x86-64-v2, AVX2 and AVX-512 CPUs, chosen at run
+time). `runtime='onnx'` (`--runtime onnx`) runs the standard-operator graph instead.
+
+On Windows, onnxruntime and the decoder need the Microsoft Visual C++ Redistributable (x64), which most machines already have; if
+`import balbal` fails with a DLL error, install it from https://aka.ms/vs/17/release/vc_redist.x64.exe. MP3, M4A and video files
+are read through FFmpeg on every platform (`ffmpeg` on the PATH); WAV, FLAC and OGG need nothing else.
 
 Files go to `~/.cache/huggingface/balbal/` (`HF_HOME`, `BALBAL_CACHE` or `cache_dir=` move it). The model revisions are pinned to the ones this release was tested
 with; `revision='main'` takes the latest upload.
