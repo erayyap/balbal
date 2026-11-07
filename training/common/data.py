@@ -61,15 +61,15 @@ def load_manifests(paths, drop=(), relabel=()):
     ids are skipped. Returns (rows, counts)."""
     dropped, new_text, counts = set(), {}, dict(rows=0, repeat=0, duplicate=0, dropped=0, relabelled=0)
     for f in drop:
-        for line in open(f):
+        for line in open(f, encoding='utf-8'):
             line = line.strip()
             if line: dropped.add(json.loads(line)['id'] if line.startswith('{') else line)
     for f in relabel:
-        for r in map(json.loads, open(f)): new_text[r['id']] = r['text']
+        for r in map(json.loads, open(f, encoding='utf-8')): new_text[r['id']] = r['text']
     rows, seen = [], set()
     for f in paths:
         prev = None
-        for r in map(json.loads, open(f)):
+        for r in map(json.loads, open(f, encoding='utf-8')):
             if r['id'] == prev and rows and rows[-1]['id'] == r['id']:
                 rows.append(rows[-1]); counts['repeat'] += 1; continue
             prev = r['id']

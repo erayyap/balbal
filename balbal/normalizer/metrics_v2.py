@@ -76,7 +76,7 @@ def _drop_filler_e(value):
 
 _EMAIL_AT_RE = re.compile(r'(?<!\S)et(?= \S+ nokta(?!\S))')
 _TAGS_PATH = Path(__file__).with_name('scoring_v2_reference_tags.json')
-_TAGS = json.loads(_TAGS_PATH.read_text())['annotations'] if _TAGS_PATH.exists() else []
+_TAGS = json.loads(_TAGS_PATH.read_text(encoding='utf-8'))['annotations'] if _TAGS_PATH.exists() else []
 _RAW_FILLER_RE = re.compile(r'(?<![\w\'’])(?:[Ee]{2,}|ı+|[Iı]{2,}|(?:[Hh][Iı])+|[Hh][Iı]+|[Hh][Mm]+|[Mm]{2,}|[Iı][Mm]+|[Aa]{2,})(?![\w\'’])')
 _CLITIC_RE = re.compile(r'(?:d[ae]|ki|m[iıuü](?:y?[dmsz]\w*)?)$')
 _ORDINAL = {'bir': 'birinci', 'iki': 'ikinci', 'üç': 'üçüncü', 'dört': 'dördüncü', 'beş': 'beşinci',

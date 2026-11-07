@@ -35,7 +35,7 @@ def sha(path):
 
 
 def rows(path):
-    return [json.loads(l) for l in open(path)]
+    return [json.loads(l) for l in open(path, encoding='utf-8')]
 
 
 def main():
@@ -63,7 +63,7 @@ def main():
     scratch = Path(tempfile.mkdtemp(prefix='kenlm-', dir=args.scratch)); corpus = scratch / 'corpus.txt'
     counts, excluded, seen, probes, token_count = Counter(), Counter(), set(), [], 0
     try:
-        with corpus.open('w') as target:
+        with corpus.open('w', encoding='utf-8') as target:
             for manifest in args.train:
                 for row in rows(manifest):
                     ident = (row['id'], row.get('pcm_sha256'))
