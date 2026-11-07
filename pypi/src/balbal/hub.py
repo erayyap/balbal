@@ -59,7 +59,7 @@ def license_notice(model_dir, name=None, stream=None, remember=False):
               f'{" (" + info["license_url"] + ")" if info.get("license_url") else ""} - non-commercial use only, with attribution and '
               f'share-alike. This is not the balbal Community License 1.1 of balbal-v2 / balbal-v2-manas.', file=stream or sys.stderr, flush=True)
         if remember:
-            try: marker.write_text('shown\n')
+            try: marker.write_text('shown\n', encoding='utf-8')
             except OSError: pass
         return True
     except Exception:
