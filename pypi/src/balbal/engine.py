@@ -16,8 +16,10 @@ bounded. overlap_seconds=0 gives the old behaviour: fixed chunks, each decoded o
 The models write numbers as words; transcribe() turns spoken number runs into digits (ITN) for models with an ITN (Turkish) unless
 itn=False.
 
-A model folder's model.json: {"model": family, "name", "languages", "itn", "long_windows"} (model_info); decoder.json in the folder
-replaces the packaged decoder settings of its family.
+A model folder's model.json: {"model": family, "name", "languages", "itn", "long_windows", "frame_samples", "license"...} (model_info);
+decoder.json in the folder replaces the packaged decoder settings of its family. frame_samples: samples per output frame (640 = 40 ms, the
+default; balbal-v2.1-zellige has 1280 = 80 ms frames; live streaming needs 640). Models in ONNX_ONLY (balbal-v2.1-zellige) are one plain
+onnx/model.onnx graph: every runtime setting loads it with standard operators.
 Live audio: Model.stream() (balbal.streaming).
 """
 from __future__ import annotations
@@ -38,7 +40,7 @@ from .decoder import KenLMDecoder
 HERE = Path(__file__).resolve().parent
 RUNTIMES = ('fast', 'onnx')
 MIN_SAMPLES = 4000   # the convolutional subsampler needs at least 0.25 s
-HOP = 640            # samples per output frame (10 ms hop x 4 subsampling): frame j of a window at sample s = file frame s / HOP + j
+HOP = 640            # samples per output frame (10 ms hop x 4 subsampling): frame j of a window at sample s = file frame s / HOP + j (default; model.json frame_samples)
 SEGMENT_SECONDS = 300.
 # (window, overlap) seconds per model, chosen on real long recordings (12 whole phone channels, 3.9 h; WER, fixed 30 s chunks ->
 # stitched): balbal-v2 22.31 -> 21.63 (15 s / 3 s: 23.06; 20 s / 8 s: 22.04), manas 19.38 -> 19.11 (30 s / 5 s: 19.02).
@@ -46,8 +48,10 @@ SINGLE_PASS_SECONDS = 30.   # clips up to this length are never windowed
 # No word at or above this confidence -> result['no_speech']. On 38 hand-checked phone clips + synthetic silence / noise / tones /
 # clicks: every speech clip has a word >= 0.26, non-speech input stays <= 0.10 (the models can write a short word over digital silence).
 NO_SPEECH_CONFIDENCE = 0.15
-LONG_WINDOWS = {'balbal-v2': (30., 10.), 'balbal-v2-manas': (30., 10.)}   # family defaults; model.json "long_windows" wins
-FAMILY_LANGUAGES = {'balbal-v2': ['tr'], 'balbal-v2-manas': ['tr', 'en']}
+LONG_WINDOWS = {'balbal-v2': (30., 10.), 'balbal-v2-manas': (30., 10.), 'balbal-v2.1-zellige': (30., 10.)}   # family defaults; model.json "long_windows" wins
+FAMILY_LANGUAGES = {'balbal-v2': ['tr'], 'balbal-v2-manas': ['tr', 'en'], 'balbal-v2.1-zellige': ['ary']}
+FRAME_SAMPLES = {'balbal-v2.1-zellige': 1280}   # 80 ms output frames (8x subsampling); the other models 640
+ONNX_ONLY = tuple(hub.ONNX_ONLY)
 
 
 def model_info(model_dir, family=None, name=None):
@@ -60,7 +64,8 @@ def model_info(model_dir, family=None, name=None):
     if isinstance(languages, str): languages = [languages]
     window, overlap = info.get('long_windows') or LONG_WINDOWS[family]
     return dict(model=family, name=info.get('name') or name or family, languages=list(languages),
-                itn=(info['itn'] if 'itn' in info else languages[0]) or None, long_windows=(float(window), float(overlap)))
+                itn=(info['itn'] if 'itn' in info else languages[0]) or None, long_windows=(float(window), float(overlap)),
+                frame_samples=int(info.get('frame_samples') or FRAME_SAMPLES.get(family, HOP)))
 
 
 def cpu_level():
@@ -119,7 +124,8 @@ def default_threads():
 class Model:
     """A loaded balbal model. Load once and reuse; one instance must not be called from two threads at once (make one per thread).
 
-    model      'balbal-v2' (default, 45M, Turkish) or 'balbal-v2-manas' (313M, Turkish + English); short: 'v2', 'manas'. Also a
+    model      'balbal-v2' (default, 45M, Turkish), 'balbal-v2-manas' (313M, Turkish + English) or 'balbal-v2.1-zellige' (Moroccan
+               Darija, CC BY-NC-SA 4.0 non-commercial; offline only); short: 'v2', 'manas', 'zellige'. Also a
                local model folder or the Hugging Face repo id ('owner/name') of a model trained on a balbal architecture
     runtime    'fast' (default) or 'onnx' (standard operators only)
     threads    CPU threads (default: BALBAL_THREADS, else min(8, CPU count))
@@ -149,12 +155,14 @@ class Model:
         self.model, self.family, self.languages = self.info['name'], self.info['model'], self.info['languages']
         self.language = lang.get(self.languages[0])
         self._itn = lang.itn_functions(self.info['itn'])
+        self.hop = self.info['frame_samples']            # samples per output frame
+        if kind == 'local': hub.license_notice(self.model_dir)
         own = self.model_dir / 'decoder.json'
         packaged = json.loads((HERE / 'configs' / self.family / 'decoder.json').read_text(encoding='utf-8'))
         mine = json.loads(own.read_text(encoding='utf-8')) if kind != 'registry' and own.exists() else {}
         if mine.get('domain_lm') and not Path(mine['domain_lm']).is_absolute(): mine['domain_lm'] = str(self.model_dir / mine['domain_lm'])
-        self.settings = dict(packaged, **mine, **(settings or {}))
-        self.runtime = runtime
+        self.settings = {**packaged, **mine, **(settings or {})}   # later wins (dict(a, **b, **c) fails on a shared key)
+        self.runtime = runtime = 'onnx' if self.family in ONNX_ONLY else runtime   # one plain graph, no fast graph: no warning, no fallback
         try:
             self.session = self._session(runtime)
         except Exception as error:   # the operator library did not load, or the model has no fast graph: the standard-operator graph
@@ -162,7 +170,7 @@ class Model:
             warnings.warn(f'balbal: the fast runtime did not load ({error}); using the standard-operator graph (runtime="onnx")')
             if kind != 'local': self.model_dir = self._download(where, 'onnx')
             self.runtime, self.session = 'onnx', self._session('onnx')
-        self.decoder = KenLMDecoder(self.model_dir / 'lm', self.settings, language=self.language)
+        self.decoder = KenLMDecoder(self.model_dir / 'lm', self.settings, language=self.language, frame_seconds=self.hop / SAMPLE_RATE)
         self.forward(np.zeros(SAMPLE_RATE, np.float32))   # warm-up
 
     def _download(self, where, runtime):
@@ -177,7 +185,7 @@ class Model:
         return (self._itn[0](text), self._itn[1](words)) if self._itn else (text, words)
 
     def _session(self, runtime):
-        graph = self.model_dir / 'onnx' / ('model.onnx' if runtime == 'fast' else 'model-plain.onnx')
+        graph = self.model_dir / 'onnx' / ('model.onnx' if runtime == 'fast' or self.family in ONNX_ONLY else 'model-plain.onnx')
         return ort_session(graph, self.threads, custom_ops=runtime == 'fast')
 
     def __repr__(self):
@@ -198,6 +206,7 @@ class Model:
     def windows(self, wave, chunk_seconds=30., overlap_seconds=5.):
         """Overlapping windows over a long waveform -> (first file frame, [frames, V + 1] log-probabilities) per window, kept frames only;
         the pieces are contiguous on the file's 40 ms frame grid. Also the acoustic seconds spent."""
+        HOP = self.hop
         size = max(HOP, int(chunk_seconds * SAMPLE_RATE) // HOP * HOP)
         overlap = min(int(overlap_seconds * SAMPLE_RATE) // HOP * HOP, size // 2)
         starts = [0]
@@ -213,12 +222,13 @@ class Model:
 
     def transcribe_long(self, wave, hotwords=None, chunk_seconds=30., overlap_seconds=5., segment_seconds=SEGMENT_SECONDS):
         """A waveform of any length -> {'text', 'words', 'acoustic_seconds', 'decoder_seconds'} (see the module docstring)."""
-        segment = max(1, int(segment_seconds / 0.04))
+        frame = self.hop / SAMPLE_RATE   # seconds per output frame
+        segment = max(1, int(segment_seconds / frame))
         texts, words, pending, start, acoustic, decoding = [], [], [], 0, 0., 0.
 
         def decode(lp, first):
             nonlocal decoding
-            t = time.perf_counter(); out = self.decoder.decode_words(lp, hotwords, first * 0.04); decoding += time.perf_counter() - t
+            t = time.perf_counter(); out = self.decoder.decode_words(lp, hotwords, first * frame); decoding += time.perf_counter() - t
             if out['text']: texts.append(out['text'])
             words.extend(out['words'])
 
@@ -269,14 +279,20 @@ class Model:
         return dict(text=text, words=words, no_speech=no_speech, model=self.model, runtime=self.runtime, duration_seconds=len(wave) / SAMPLE_RATE,
                     inference_seconds=elapsed, realtime_factor=len(wave) / SAMPLE_RATE / elapsed if elapsed else None)
 
+    def _require_streaming(self):
+        if self.hop != HOP: raise NotImplementedError(f'{self.model} has {1000 * self.hop // SAMPLE_RATE} ms output frames; live streaming '
+                                                      f'(balbal live, WebSocket /v1/realtime) is built for 40 ms frames (balbal-v2, balbal-v2-manas)')
+
     def stream(self, mode='segment', *, hotwords=None, itn=True, **options):
         """A live stream: feed audio pieces with .accept(piece), end with .finish(); both return partial / final text events
         (see balbal.streaming). mode 'segment' (default) or 'window'; options: chunk, right, endpoint, max_segment (seconds)."""
+        self._require_streaming()
         from .streaming import LiveStream
         return LiveStream(self, mode, hotwords, itn, **options)
 
     def transcribe_stream(self, pieces, mode='segment', *, hotwords=None, itn=True, **options):
         """Generator of live events for an iterable of audio pieces (float32 or int16, mono, 16 kHz); see stream()."""
+        self._require_streaming()
         from .streaming import transcribe_stream
         return transcribe_stream(self, pieces, mode=mode, hotwords=hotwords, itn=itn, **options)
 

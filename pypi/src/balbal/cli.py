@@ -2,6 +2,7 @@
 
   balbal run speech.wav                      text of each file (balbal-v2; downloaded from Hugging Face on first use)
   balbal run --model manas a.wav b.mp3       balbal-v2-manas (Turkish + English)
+  balbal run --model zellige a.wav           balbal-v2.1-zellige (Moroccan Darija; CC BY-NC-SA 4.0, non-commercial; no live streaming)
   balbal run --json speech.wav               one JSON line per file: text, per-word timestamps, timings
   balbal run --format srt -o subs/ videos/   one subtitle file per audio / video file of a folder (txt, json, srt, vtt)
   balbal run --jobs 4 -o out/ calls/         four processes at once (CPU threads are split between them)
@@ -21,14 +22,25 @@ import sys
 
 from . import __version__
 from .engine import RUNTIMES
-from .hub import MODELS, download
+from .hub import LANGUAGE_NAMES, LICENSES, MODELS, download
 
 COMMANDS = ('run', 'download', 'live', 'serve', 'wyoming')
 
 
+def hub_kind(model):
+    from .hub import resolve
+    try: return resolve(model)[0]
+    except ValueError: return None
+
+
+def model_list():
+    """'balbal-v2 (Turkish; balbal Community License 1.1), ...': the registry models with language and licence."""
+    return '; '.join(f'{m} ({LANGUAGE_NAMES[m]}; {LICENSES[m]})' for m in MODELS)
+
+
 def model_options(p):
     p.add_argument('--model', '-m', default='balbal-v2',
-                   help=f'{" or ".join(MODELS)} (short: v2, manas), a model folder or a Hugging Face repo id owner/name; default balbal-v2')
+                   help=f'{model_list()} - short: v2, manas, zellige - a model folder or a Hugging Face repo id owner/name; default balbal-v2')
     p.add_argument('--runtime', choices=RUNTIMES, default='fast', help='fast (custom kernels, default) or onnx (standard operators)')
     p.add_argument('--revision', default=None, help='Hugging Face revision (default: the tested one, main for other repos)')
 
@@ -148,7 +160,11 @@ def main(argv=None):
         return
 
     if args.command == 'download':
-        print(download(args.model, args.runtime, args.revision))
+        path = download(args.model, args.runtime, args.revision)
+        if Path(path).is_dir() and hub_kind(args.model) == 'local':
+            from .hub import license_notice
+            license_notice(path)
+        print(path)
         return
     missing = [str(f) for f in args.audio if not f.exists()]
     if missing: p.error('no such file: ' + ', '.join(missing))

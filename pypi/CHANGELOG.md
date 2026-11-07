@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0
+
+- New model: **balbal-v2.1-zellige** (`--model zellige`, `balbal.load('zellige')`), Moroccan Darija speech recognition (language `ary`, Arabic
+  script, output as decoded: no casing, no number writing). Sabeq-ASR FastConformer encoder (80 ms output frames) with the balbal
+  refiner and product-key memory, 6-gram piece KenLM. ONNX only: one plain-operator graph (`onnx/model.onnx`, ~1.2 GB fp32); `--runtime
+  fast` loads the same graph without a warning. Offline transcription only: `balbal live` and the WebSocket stream
+  raise a clear error for models with 80 ms frames (word timestamps are scaled to the frame length but not checked against forced alignment for this model).
+- Licence: zellige is CC BY-NC-SA 4.0 (non-commercial), unlike balbal-v2 / balbal-v2-manas (balbal Community License 1.1). A model whose
+  `model.json` declares a non-commercial `"license"` prints one notice naming it when first downloaded (a local folder: once per process);
+  `balbal --help` lists each model with its language and licence.
+- Model folders may set `"frame_samples"` (samples per output frame, default 640 = 40 ms) in `model.json`: long-audio windows, word times
+  and the segment cuts follow it. balbal-v2 and balbal-v2-manas output is unchanged.
+
 ## 0.5.0
 
 - Wheels for macOS (Apple Silicon, macOS 14+) and Windows x86-64, Python 3.11 and 3.12, with the native beam-search decoder and the

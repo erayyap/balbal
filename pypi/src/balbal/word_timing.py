@@ -10,7 +10,7 @@ its highest calibrated CTC posterior over its frames (punctuation pieces do not 
 wrong words with AUC 0.88 (balbal-v2) / 0.87 (manas); wrong words average ~0.4, correct ones ~0.85.
 """
 FRAME = 0.04
-LEAD, TAIL, JOIN, MAX_GAP = 1, 5, 12, 8
+_LEAD, _TAIL, _JOIN, _MAX_GAP = LEAD, TAIL, JOIN, MAX_GAP = 1, 5, 12, 8
 PUNCT = set('.,?!:;"\'“”‘’()-…')
 # Other scripts' punctuation (none of these is a piece of the balbal-v2 / manas vocabularies, whose output is unchanged; '%', '/',
 # '&', '#', '_' and dashes other than '-' stay word content).
@@ -36,9 +36,12 @@ def _content(piece):
     return bool(p) and not set(p) <= PUNCT
 
 
-def words_from_spans(spans, sp, offset_seconds=0., confidences=None):
+def words_from_spans(spans, sp, offset_seconds=0., confidences=None, frame_seconds=FRAME):
     """[(id, f0, f1)] -> [{'word', 'start', 'end'}] in seconds; `sp` is the SentencePiece tokenizer. With `confidences` (one per
-    span) every word also gets 'confidence'."""
+    span) every word also gets 'confidence'. frame_seconds: length of an acoustic frame (0.04 s for balbal-v2 / manas; the frame-count
+    constants above are tuned for that and are scaled to the same durations for slower frame rates, e.g. 0.08 s)."""
+    scale = FRAME / frame_seconds
+    LEAD, TAIL, JOIN, MAX_GAP = (max(1, round(x * scale)) for x in (_LEAD, _TAIL, _JOIN, _MAX_GAP))
     groups = []
     for k, (t, f0, f1) in enumerate(spans):
         if sp.id_to_piece(t).startswith('▁') or not groups:
@@ -71,7 +74,7 @@ def words_from_spans(spans, sp, offset_seconds=0., confidences=None):
             w[2] = min(nxt if nxt - w[2] < JOIN else w[2] + TAIL, nxt)
         else:
             w[2] += TAIL
-    words = [dict(word=text, start=round(offset_seconds + f0 * FRAME, 2), end=round(offset_seconds + f1 * FRAME, 2))
+    words = [dict(word=text, start=round(offset_seconds + f0 * frame_seconds, 2), end=round(offset_seconds + f1 * frame_seconds, 2))
              for text, f0, f1, _ in raw]
     if confidences is not None:
         for w, r in zip(words, raw): w['confidence'] = round(r[3], 3)

@@ -4,8 +4,11 @@ BALBAL_CACHE or cache_dir= moves it). Only what the CPU runtime needs is fetched
 resolves outside the graph's directory.
 
 A model is one of:
-  a registry name   balbal-v2 / balbal-v2-manas (short: v2, manas): erayyapagci/balbal-v2(-manas), revisions pinned to the weights this
-                    release was tested with (decoder settings in configs/ belong to them); revision='main' takes the latest upload
+  a registry name   balbal-v2 / balbal-v2-manas / balbal-v2.1-zellige (short: v2, manas, zellige): erayyapagci/<name>, revisions pinned
+                    to the weights this release was tested with (decoder settings in configs/ belong to them); revision='main' takes
+                    the latest upload. balbal-v2.1-zellige (Moroccan Darija) is released under CC BY-NC-SA 4.0 (non-commercial);
+                    the others under the balbal Community License 1.1. Its model.json says so ("license"), and the first download
+                    / load prints a notice (license_notice)
   a local folder    model.json, onnx/, lm/ (and optionally decoder.json), used as it is
   a Hugging Face repo id   'owner/name' of a model trained on a balbal architecture, same layout as a local folder (revision default main)
 """
@@ -14,14 +17,56 @@ import os
 import sys
 from pathlib import Path
 
-MODELS = ('balbal-v2', 'balbal-v2-manas')
-ALIASES = {'v2': 'balbal-v2', 'balbal': 'balbal-v2', 'manas': 'balbal-v2-manas', 'v2-manas': 'balbal-v2-manas'}
-REPOS = {'balbal-v2': 'erayyapagci/balbal-v2', 'balbal-v2-manas': 'erayyapagci/balbal-v2-manas'}
-REVISIONS = {'balbal-v2': '2729f924ea12e2cc236eb7350d11c0c83ee3fa6a', 'balbal-v2-manas': 'c651a680a9147b0a7eb3fd7f5f4f914f3f4ddc25'}
+MODELS = ('balbal-v2', 'balbal-v2-manas', 'balbal-v2.1-zellige')
+ALIASES = {'v2': 'balbal-v2', 'balbal': 'balbal-v2', 'manas': 'balbal-v2-manas', 'v2-manas': 'balbal-v2-manas',
+           'zellige': 'balbal-v2.1-zellige', 'v2.1': 'balbal-v2.1-zellige', 'v2.1-zellige': 'balbal-v2.1-zellige'}
+REPOS = {'balbal-v2': 'erayyapagci/balbal-v2', 'balbal-v2-manas': 'erayyapagci/balbal-v2-manas',
+         'balbal-v2.1-zellige': 'erayyapagci/balbal-v2.1-zellige'}
+REVISIONS = {'balbal-v2': '2729f924ea12e2cc236eb7350d11c0c83ee3fa6a', 'balbal-v2-manas': 'c651a680a9147b0a7eb3fd7f5f4f914f3f4ddc25',
+             'balbal-v2.1-zellige': '938a21998c56216386b53280cde0bf6037995cc1'}
+# Licence of each model's weights (shown by `balbal --help` and in the first-use notice); the models not listed use the balbal Community License 1.1.
+LICENSES = {'balbal-v2': 'balbal Community License 1.1', 'balbal-v2-manas': 'balbal Community License 1.1',
+            'balbal-v2.1-zellige': 'CC BY-NC-SA 4.0 (non-commercial)'}
+LANGUAGE_NAMES = {'balbal-v2': 'Turkish', 'balbal-v2-manas': 'Turkish, English', 'balbal-v2.1-zellige': 'Moroccan Darija'}
 COMMON = ['model.json', 'lm/model.binary', 'lm/tokenizer.model']
 EXTRA = ['decoder.json']   # fetched for other repos when present: their own decoder settings
 GRAPHS = {'fast': ['onnx/model.onnx', 'onnx/model.onnx.data'], 'onnx': ['onnx/model-plain.onnx', 'onnx/model-plain.onnx.data']}
-SIZES = {'balbal-v2': {'fast': '590 MB', 'onnx': '680 MB'}, 'balbal-v2-manas': {'fast': '1.1 GB', 'onnx': '1.6 GB'}}
+# Models released as one plain-operator graph only (no custom-operator "fast" graph): every runtime loads onnx/model.onnx (engine.ONNX_ONLY).
+ONNX_ONLY = {'balbal-v2.1-zellige': ['onnx/model.onnx']}
+SIZES = {'balbal-v2': {'fast': '590 MB', 'onnx': '680 MB'}, 'balbal-v2-manas': {'fast': '1.1 GB', 'onnx': '1.6 GB'},
+         'balbal-v2.1-zellige': {'fast': '1.4 GB', 'onnx': '1.4 GB'}}
+
+
+def graph_files(name, runtime):
+    """Graph files of a registry model for a runtime (ONNX-only models have the one plain graph for both)."""
+    return ONNX_ONLY.get(name) or GRAPHS[runtime]
+
+
+def license_notice(model_dir, name=None, stream=None, remember=False):
+    """Once per model download (a marker file in the cache folder; once per process for a local folder): if the model's model.json declares
+    a non-commercial licence ("license": "cc-by-nc-sa-4.0", "license_name": ..., "license_url": ...), print one notice naming it to stderr.
+    remember: a downloaded copy (marker file); False for a local folder. Never blocks and never raises."""
+    import json
+    try:
+        info = json.loads((Path(model_dir) / 'model.json').read_text(encoding='utf-8'))
+        spdx = str(info.get('license') or '').lower()
+        if not (info.get('non_commercial') or '-nc' in spdx): return False
+        marker = Path(model_dir) / '.license-notice'
+        if str(Path(model_dir)) in _noticed or marker.exists(): return False
+        _noticed.add(str(Path(model_dir)))
+        label = info.get('name') or name or Path(model_dir).name
+        print(f'balbal: NOTICE: {label} is released under {info.get("license_name") or spdx.upper()}'
+              f'{" (" + info["license_url"] + ")" if info.get("license_url") else ""} - non-commercial use only, with attribution and '
+              f'share-alike. This is not the balbal Community License 1.1 of balbal-v2 / balbal-v2-manas.', file=stream or sys.stderr, flush=True)
+        if remember:
+            try: marker.write_text('shown\n')
+            except OSError: pass
+        return True
+    except Exception:
+        return False
+
+
+_noticed = set()
 
 
 def model_name(name):
@@ -43,6 +88,8 @@ def resolve(model):
         pass
     path = Path(text).expanduser()
     if path.is_dir(): return 'local', path
+    for registry, repo in REPOS.items():   # the registry model's own Hugging Face repo id is the registry model
+        if text == repo: return 'registry', registry
     parts = text.split('/')
     if len(parts) == 2 and all(parts) and not text.startswith(('.', '~')) and all(c.isalnum() or c in '-_.' for p in parts for c in p):
         return 'repo', text
@@ -65,15 +112,18 @@ def download(model='balbal-v2', runtime='fast', revision=None, cache_dir=None, q
     if kind == 'local': return name
     if kind == 'repo': return download_repo(name, runtime, revision, cache_dir, quiet)
     revision = revision or REVISIONS[name]
-    files = COMMON + GRAPHS[runtime]
+    files = COMMON + graph_files(name, runtime)
     local = cache_root(cache_dir) / name / revision
     pinned = len(revision) == 40 and all(c in '0123456789abcdef' for c in revision)
-    if pinned and all((local / f).is_file() for f in files): return local
+    if pinned and all((local / f).is_file() for f in files):
+        license_notice(local, name, remember=True)
+        return local
     if not quiet and not all((local / f).is_file() for f in files):
         print(f'balbal: downloading {name} ({runtime} runtime, ~{SIZES[name][runtime]}, once) from huggingface.co/{REPOS[name]} '
               f'to {local}', file=sys.stderr, flush=True)
     path = Path(snapshot_download(repo_id=REPOS[name], revision=revision, allow_patterns=files, local_dir=local))
     count_download(REPOS[name])
+    license_notice(path, name, remember=True)
     return path
 
 
@@ -99,6 +149,7 @@ def download_repo(repo, runtime='fast', revision=None, cache_dir=None, quiet=Fal
     if not quiet and not have:
         print(f'balbal: downloading {repo} ({runtime} runtime, once) from huggingface.co/{repo} to {local}', file=sys.stderr, flush=True)
     snapshot_download(repo_id=repo, revision=revision, allow_patterns=files + [f for f in EXTRA if f in listed], local_dir=local)
+    license_notice(local, repo, remember=True)
     return local
 
 

@@ -105,7 +105,7 @@ def test_resolve_and_model_info(tmp_path):
     assert hub.resolve('someone/azerbaijani-model') == ('repo', 'someone/azerbaijani-model')
     assert hub.resolve(str(tmp_path)) == ('local', tmp_path)
     with pytest.raises(ValueError): hub.resolve('not a model')
-    assert model_info(tmp_path) == dict(model='balbal-v2', name='balbal-v2', languages=['tr'], itn='tr', long_windows=(30., 10.))
+    assert model_info(tmp_path) == dict(model='balbal-v2', name='balbal-v2', languages=['tr'], itn='tr', long_windows=(30., 10.), frame_samples=640)
     (tmp_path / 'model.json').write_text(json.dumps({'model': 'balbal-v2-manas', 'languages': ['az'], 'name': 'az-model'}), encoding='utf-8')
     info = model_info(tmp_path)
     assert info['model'] == 'balbal-v2-manas' and info['name'] == 'az-model' and info['languages'] == ['az'] and info['itn'] == 'az'
@@ -142,3 +142,41 @@ def test_wyoming_routes_by_language():
     assert choose(pool, None, 'en-US') == 'balbal-v2-manas' and choose(pool, None, 'az') == 'az-model'
     assert choose(pool, None, 'tr') == 'balbal-v2' and choose(pool, None, 'de') == 'balbal-v2' and choose(pool, None, None) == 'balbal-v2'
     assert choose(pool, 'manas', 'tr') == 'balbal-v2-manas' and choose(pool, 'az-model') == 'az-model'
+
+
+def test_zellige_registry_and_info(tmp_path):
+    from balbal import hub
+    from balbal.engine import model_info, ONNX_ONLY
+    assert hub.resolve('zellige') == ('registry', 'balbal-v2.1-zellige') == hub.resolve('erayyapagci/balbal-v2.1-zellige')
+    assert hub.resolve('v2') == ('registry', 'balbal-v2') and hub.resolve('manas') == ('registry', 'balbal-v2-manas')
+    assert 'NC' in hub.LICENSES['balbal-v2.1-zellige'] and hub.graph_files('balbal-v2.1-zellige', 'fast') == ['onnx/model.onnx']
+    assert hub.graph_files('balbal-v2', 'fast') == hub.GRAPHS['fast'] and 'balbal-v2.1-zellige' in ONNX_ONLY
+    info = model_info(tmp_path, 'balbal-v2.1-zellige')
+    assert info['languages'] == ['ary'] and info['frame_samples'] == 1280 and info['itn'] == 'ary'
+    from balbal import lang
+    assert lang.itn_functions('ary') is None   # Moroccan Darija: no number writer, no casing
+
+
+def test_license_notice(tmp_path, capsys):
+    from balbal import hub
+    (tmp_path / 'model.json').write_text(json.dumps({'license': 'cc-by-nc-sa-4.0', 'license_name': 'CC BY-NC-SA 4.0'}), encoding='utf-8')
+    assert hub.license_notice(tmp_path, remember=True) is True
+    assert 'CC BY-NC-SA 4.0' in capsys.readouterr().err
+    assert hub.license_notice(tmp_path, remember=True) is False and capsys.readouterr().err == ''   # once
+    free = tmp_path / 'free'; free.mkdir()
+    (free / 'model.json').write_text(json.dumps({'license': 'other'}), encoding='utf-8')
+    assert hub.license_notice(free) is False and capsys.readouterr().err == ''
+
+
+def test_word_timing_frame_seconds():
+    import sentencepiece  # noqa: F401  (only to skip where the tokenizer package is missing)
+    from balbal.word_timing import words_from_spans
+
+    class Sp:
+        pieces = {0: '\u2581a', 1: '\u2581b'}
+        def id_to_piece(self, t): return self.pieces[t]
+        def decode(self, ids): return ''.join(self.pieces[t] for t in ids).replace('\u2581', ' ')
+    spans = [(0, 10, 10), (1, 30, 30)]
+    a = words_from_spans(spans, Sp()); b = words_from_spans(spans, Sp(), frame_seconds=.08)
+    assert a[0]['start'] == pytest.approx(.36) and b[0]['start'] == pytest.approx(.72)   # (frame 10 - LEAD 1 frame) x frame length
+    assert b[1]['end'] > b[1]['start']

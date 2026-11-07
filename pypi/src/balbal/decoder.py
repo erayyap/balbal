@@ -82,7 +82,7 @@ def load_lm(lm_dir, dictionary, settings):
 class KenLMDecoder:
     """CPU decoder; reuse one instance per thread/process."""
 
-    def __init__(self, lm_dir, settings, fast=True, language=None):
+    def __init__(self, lm_dir, settings, fast=True, language=None, frame_seconds=0.04):
         """language: a balbal.lang.Language whose casing makes the hotword variants (default Turkish)."""
         import sentencepiece as spm
         from flashlight.lib.text.decoder import ZeroLM
@@ -98,6 +98,7 @@ class KenLMDecoder:
             from . import lang
             language = lang.get('tr')
         self.language = language
+        self.frame_seconds = frame_seconds   # acoustic frame length (word timestamps)
         s = self.settings
         self.sp = spm.SentencePieceProcessor(model_file=str(lm_dir / 'tokenizer.model'))
         self.vocab_size = self.sp.vocab_size()
@@ -192,4 +193,4 @@ class KenLMDecoder:
         rows = token_spans(path, self.vocab_size)
         confidences = [math.exp(float(a[f0:f1 + 1, t].max())) for t, f0, f1 in rows]   # calibrated posterior at the token's peak
         spans = [(t, int(kept[f0]), int(kept[f1])) for t, f0, f1 in rows]
-        return dict(text=self.sp.decode([t for t, _, _ in spans]), words=words_from_spans(spans, self.sp, offset_seconds, confidences))
+        return dict(text=self.sp.decode([t for t, _, _ in spans]), words=words_from_spans(spans, self.sp, offset_seconds, confidences, self.frame_seconds))
