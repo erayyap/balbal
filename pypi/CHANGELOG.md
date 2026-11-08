@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2
+
+- `balbal.__version__` (and `balbal --version`, the server's `/health`) said 0.6.0 in the 0.6.1 package; it now matches the
+  package version. No other change.
+
 ## 0.6.1
 
 - The Moroccan Darija model is renamed **balbal-v2e-zellige** (the "e" stands for experimental); it was balbal-v2.1-zellige in 0.6.0.

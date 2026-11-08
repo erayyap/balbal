@@ -160,6 +160,15 @@ def test_zellige_registry_and_info(tmp_path):
     assert lang.itn_functions('ary') is None   # Moroccan Darija: no number writer, no casing
 
 
+def test_version_matches_package_metadata():
+    import balbal
+    from importlib import metadata
+    try: installed = metadata.version('balbal')
+    except metadata.PackageNotFoundError: pytest.skip('balbal is not installed (source tree on sys.path)')
+    if Path(balbal.__file__).resolve().parents[1].name == 'src': pytest.skip('source tree imported, not the installed package')
+    assert balbal.__version__ == installed
+
+
 def test_registry_models_have_packaged_decoder_settings():
     import balbal
     from balbal import hub
