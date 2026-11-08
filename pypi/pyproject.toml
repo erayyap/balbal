@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "balbal"
-version = "0.6.0"
-description = "Open Turkish speech recognition on CPU: balbal-v2 and balbal-v2-manas (and models trained on their architectures), plus the experimental Moroccan Darija model balbal-v2.1-zellige; weights fetched from Hugging Face on first use."
+version = "0.6.1"
+description = "Open Turkish speech recognition on CPU: balbal-v2 and balbal-v2-manas (and models trained on their architectures), plus the experimental Moroccan Darija model balbal-v2e-zellige; weights fetched from Hugging Face on first use."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]

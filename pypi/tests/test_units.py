@@ -1,4 +1,5 @@
 """Unit tests without a model."""
+from pathlib import Path
 import json
 
 import numpy as np
@@ -147,14 +148,23 @@ def test_wyoming_routes_by_language():
 def test_zellige_registry_and_info(tmp_path):
     from balbal import hub
     from balbal.engine import model_info, ONNX_ONLY
-    assert hub.resolve('zellige') == ('registry', 'balbal-v2.1-zellige') == hub.resolve('erayyapagci/balbal-v2.1-zellige')
+    assert hub.resolve('zellige') == ('registry', 'balbal-v2e-zellige') == hub.resolve('erayyapagci/balbal-v2e-zellige')
+    for old in ('balbal-v2.1-zellige', 'v2.1', 'v2.1-zellige', 'v2e', 'v2e-zellige', 'erayyapagci/balbal-v2.1-zellige'):   # renamed 2026-11-08
+        assert hub.resolve(old) == ('registry', 'balbal-v2e-zellige')
     assert hub.resolve('v2') == ('registry', 'balbal-v2') and hub.resolve('manas') == ('registry', 'balbal-v2-manas')
-    assert 'NC' in hub.LICENSES['balbal-v2.1-zellige'] and hub.graph_files('balbal-v2.1-zellige', 'fast') == ['onnx/model.onnx']
-    assert hub.graph_files('balbal-v2', 'fast') == hub.GRAPHS['fast'] and 'balbal-v2.1-zellige' in ONNX_ONLY
-    info = model_info(tmp_path, 'balbal-v2.1-zellige')
+    assert 'NC' in hub.LICENSES['balbal-v2e-zellige'] and hub.graph_files('balbal-v2e-zellige', 'fast') == ['onnx/model.onnx']
+    assert hub.graph_files('balbal-v2', 'fast') == hub.GRAPHS['fast'] and 'balbal-v2e-zellige' in ONNX_ONLY
+    info = model_info(tmp_path, 'balbal-v2e-zellige')
     assert info['languages'] == ['ary'] and info['frame_samples'] == 1280 and info['itn'] == 'ary'
     from balbal import lang
     assert lang.itn_functions('ary') is None   # Moroccan Darija: no number writer, no casing
+
+
+def test_registry_models_have_packaged_decoder_settings():
+    import balbal
+    from balbal import hub
+    for name in hub.MODELS:   # engine reads configs/<registry name>/decoder.json (the folder must follow a model rename)
+        assert (Path(balbal.__file__).parent / 'configs' / name / 'decoder.json').is_file(), name
 
 
 def test_license_notice(tmp_path, capsys):

@@ -1,21 +1,21 @@
 # balbal
 
 Turkish speech recognition: model, CPU inference (offline and streaming) and training code. An experimental Moroccan Darija model,
-balbal-v2.1-zellige, runs through the same `balbal` package.
+balbal-v2e-zellige, runs through the same `balbal` package.
 
 | Model | Size | Encoder | Tokenizer | Languages |
 |---|---|---|---|---|
 | **balbal-v2** (default) | 45.4M parameters (30.0M of them a product-key memory table) | Conformer-CTC, 16 layers, d_model 176, 4x subsampling | SentencePiece 1024 | Turkish |
 | **balbal-v2-manas** (large) | 313.3M parameters (192.0M of them a product-key memory table) | FastConformer-CTC, 18 layers, d_model 512, 4x subsampling | SentencePiece 2048 | Turkish, English |
-| **balbal-v2.1-zellige** (experimental) | 307.3M parameters (193M of them a product-key memory table) | FastConformer-CTC, 17 layers, d_model 512, 8x subsampling, initialised from [Sabeq-ASR](https://huggingface.co/MostafaAhmed98/Sabeq-ASR) | SentencePiece 1289 | Moroccan Darija |
+| **balbal-v2e-zellige** (experimental) | 307.3M parameters (193M of them a product-key memory table) | FastConformer-CTC, 17 layers, d_model 512, 8x subsampling, initialised from [Sabeq-ASR](https://huggingface.co/MostafaAhmed98/Sabeq-ASR) | SentencePiece 1289 | Moroccan Darija |
 
 All three models add a 3-pass loop refiner with a product-key acoustic memory on top of the CTC encoder and decode with a 6-gram token
-KenLM beam search. Output: cased, punctuated text with per-word timestamps (balbal-v2.1-zellige: Arabic-script text as decoded, offline
+KenLM beam search. Output: cased, punctuated text with per-word timestamps (balbal-v2e-zellige: Arabic-script text as decoded, offline
 only; its weights are CC BY-NC-SA 4.0, non-commercial).
 
 [![balbal-v2 weights on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-balbal--v2-yellow?style=for-the-badge)](https://huggingface.co/erayyapagci/balbal-v2)
 [![balbal-v2-manas weights on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-balbal--v2--manas-yellow?style=for-the-badge)](https://huggingface.co/erayyapagci/balbal-v2-manas)
-[![balbal-v2.1-zellige weights on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-balbal--v2.1--zellige-yellow?style=for-the-badge)](https://huggingface.co/erayyapagci/balbal-v2.1-zellige)
+[![balbal-v2e-zellige weights on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-balbal--v2e--zellige-yellow?style=for-the-badge)](https://huggingface.co/erayyapagci/balbal-v2e-zellige)
 [![Model page, benchmarks and browser demo](https://img.shields.io/badge/erayy.com-model%20page%20%26%20demo-c9a24a?style=for-the-badge)](https://erayy.com/balbal/)
 
 This repository holds the code; the weights are on Hugging Face. Benchmarks, a browser demo and the Android app are on the [model page](https://erayy.com/balbal/) ([Türkçe](https://erayy.com/tr/balbal/)). The previous model's code is in [`balbal-v1/`](balbal-v1/).
@@ -26,7 +26,7 @@ This repository holds the code; the weights are on Hugging Face. Benchmarks, a b
 pip install balbal                            # Linux x86-64, macOS (Apple Silicon), Windows x86-64; Python 3.11 or 3.12
 balbal run speech.wav                         # balbal-v2; the model downloads from Hugging Face on the first run
 balbal run --model manas --json speech.mp3    # balbal-v2-manas; text + per-word timestamps and confidences
-balbal run --model zellige speech.wav         # balbal-v2.1-zellige: Moroccan Darija (experimental, non-commercial weights)
+balbal run --model zellige speech.wav         # balbal-v2e-zellige: Moroccan Darija (experimental, non-commercial weights)
 balbal run -f srt -o subs/ videos/            # subtitles for every audio / video file in a folder
 pip install 'balbal[live]';    balbal live     # live microphone transcription
 pip install 'balbal[server]';  balbal serve    # OpenAI-compatible API + live WebSocket
@@ -324,4 +324,4 @@ Issues and pull requests are welcome; see `CONTRIBUTING.md`.
 ## License and citation
 
 Code: Apache License 2.0 (`LICENSE`, `NOTICE`). The balbal-v2-manas model configuration derives from NVIDIA's
-`stt_en_fastconformer_ctc_large` (CC-BY-4.0). Weights: see their model cards ([balbal-v2](https://huggingface.co/erayyapagci/balbal-v2), [balbal-v2-manas](https://huggingface.co/erayyapagci/balbal-v2-manas), [balbal-v2.1-zellige](https://huggingface.co/erayyapagci/balbal-v2.1-zellige): CC BY-NC-SA 4.0). How to cite: `CITATION.cff`.
+`stt_en_fastconformer_ctc_large` (CC-BY-4.0). Weights: see their model cards ([balbal-v2](https://huggingface.co/erayyapagci/balbal-v2), [balbal-v2-manas](https://huggingface.co/erayyapagci/balbal-v2-manas), [balbal-v2e-zellige](https://huggingface.co/erayyapagci/balbal-v2e-zellige): CC BY-NC-SA 4.0). How to cite: `CITATION.cff`.

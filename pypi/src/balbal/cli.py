@@ -2,7 +2,7 @@
 
   balbal run speech.wav                      text of each file (balbal-v2; downloaded from Hugging Face on first use)
   balbal run --model manas a.wav b.mp3       balbal-v2-manas (Turkish + English)
-  balbal run --model zellige a.wav           balbal-v2.1-zellige (Moroccan Darija; CC BY-NC-SA 4.0, non-commercial; no live streaming)
+  balbal run --model zellige a.wav           balbal-v2e-zellige (Moroccan Darija; CC BY-NC-SA 4.0, non-commercial; no live streaming)
   balbal run --json speech.wav               one JSON line per file: text, per-word timestamps, timings
   balbal run --format srt -o subs/ videos/   one subtitle file per audio / video file of a folder (txt, json, srt, vtt)
   balbal run --jobs 4 -o out/ calls/         four processes at once (CPU threads are split between them)

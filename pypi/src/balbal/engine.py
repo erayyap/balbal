@@ -18,7 +18,7 @@ itn=False.
 
 A model folder's model.json: {"model": family, "name", "languages", "itn", "long_windows", "frame_samples", "license"...} (model_info);
 decoder.json in the folder replaces the packaged decoder settings of its family. frame_samples: samples per output frame (640 = 40 ms, the
-default; balbal-v2.1-zellige has 1280 = 80 ms frames; live streaming needs 640). Models in ONNX_ONLY (balbal-v2.1-zellige) are one plain
+default; balbal-v2e-zellige has 1280 = 80 ms frames; live streaming needs 640). Models in ONNX_ONLY (balbal-v2e-zellige) are one plain
 onnx/model.onnx graph: every runtime setting loads it with standard operators.
 Live audio: Model.stream() (balbal.streaming).
 """
@@ -48,9 +48,9 @@ SINGLE_PASS_SECONDS = 30.   # clips up to this length are never windowed
 # No word at or above this confidence -> result['no_speech']. On 38 hand-checked phone clips + synthetic silence / noise / tones /
 # clicks: every speech clip has a word >= 0.26, non-speech input stays <= 0.10 (the models can write a short word over digital silence).
 NO_SPEECH_CONFIDENCE = 0.15
-LONG_WINDOWS = {'balbal-v2': (30., 10.), 'balbal-v2-manas': (30., 10.), 'balbal-v2.1-zellige': (30., 10.)}   # family defaults; model.json "long_windows" wins
-FAMILY_LANGUAGES = {'balbal-v2': ['tr'], 'balbal-v2-manas': ['tr', 'en'], 'balbal-v2.1-zellige': ['ary']}
-FRAME_SAMPLES = {'balbal-v2.1-zellige': 1280}   # 80 ms output frames (8x subsampling); the other models 640
+LONG_WINDOWS = {'balbal-v2': (30., 10.), 'balbal-v2-manas': (30., 10.), 'balbal-v2e-zellige': (30., 10.)}   # family defaults; model.json "long_windows" wins
+FAMILY_LANGUAGES = {'balbal-v2': ['tr'], 'balbal-v2-manas': ['tr', 'en'], 'balbal-v2e-zellige': ['ary']}
+FRAME_SAMPLES = {'balbal-v2e-zellige': 1280}   # 80 ms output frames (8x subsampling); the other models 640
 ONNX_ONLY = tuple(hub.ONNX_ONLY)
 
 
@@ -124,7 +124,7 @@ def default_threads():
 class Model:
     """A loaded balbal model. Load once and reuse; one instance must not be called from two threads at once (make one per thread).
 
-    model      'balbal-v2' (default, 45M, Turkish), 'balbal-v2-manas' (313M, Turkish + English) or 'balbal-v2.1-zellige' (Moroccan
+    model      'balbal-v2' (default, 45M, Turkish), 'balbal-v2-manas' (313M, Turkish + English) or 'balbal-v2e-zellige' (Moroccan
                Darija, CC BY-NC-SA 4.0 non-commercial; offline only); short: 'v2', 'manas', 'zellige'. Also a
                local model folder or the Hugging Face repo id ('owner/name') of a model trained on a balbal architecture
     runtime    'fast' (default) or 'onnx' (standard operators only)

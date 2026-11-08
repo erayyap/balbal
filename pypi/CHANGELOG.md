@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1
+
+- The Moroccan Darija model is renamed **balbal-v2e-zellige** (the "e" stands for experimental); it was balbal-v2.1-zellige in 0.6.0.
+  Hugging Face repo: [erayyapagci/balbal-v2e-zellige](https://huggingface.co/erayyapagci/balbal-v2e-zellige) (the old repo id
+  redirects). `--model zellige`, `v2e` and `v2e-zellige` load it; the old names (`balbal-v2.1-zellige`, `v2.1`, `v2.1-zellige`, the old
+  repo id) still work. Same weights and output. The model is downloaded once more into a new cache folder; the old folder
+  `<HF_HOME>/balbal/balbal-v2.1-zellige` can be deleted. balbal-v2 and balbal-v2-manas are unchanged.
+
 ## 0.6.0
 
 - New model: **balbal-v2.1-zellige** (`--model zellige`, `balbal.load('zellige')`), Moroccan Darija speech recognition (language `ary`, Arabic

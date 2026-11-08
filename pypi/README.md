@@ -14,7 +14,7 @@ The first run downloads the model from Hugging Face (balbal-v2: ~590 MB, once); 
 | **balbal-v2** (default) | 45.4M | Turkish | 9.46% / 18.44% | 236x real time |
 | **balbal-v2-manas** | 313.3M | Turkish, English | 8.20% / 14.89% | 123x real time |
 
-**balbal-v2.1-zellige** (`--model zellige`) is an experimental Moroccan Darija (Arabic script) model, ~1.4 GB download, offline transcription only (no
+**balbal-v2e-zellige** (`--model zellige`) is an experimental Moroccan Darija (Arabic script) model, ~1.4 GB download, offline transcription only (no
 `balbal live`, no WebSocket streaming). Its weights are released under **CC BY-NC-SA 4.0: non-commercial use only**, not the balbal
 Community License 1.1 of the two models above; balbal prints a notice naming the license the first time it downloads it. It writes the
 decoded Arabic text as is (no casing, no number writing).
@@ -186,7 +186,7 @@ with; `revision='main'` takes the latest upload.
 ## Links
 
 - Model page: https://erayy.com/balbal
-- Weights: [erayyapagci/balbal-v2](https://huggingface.co/erayyapagci/balbal-v2), [erayyapagci/balbal-v2-manas](https://huggingface.co/erayyapagci/balbal-v2-manas), [erayyapagci/balbal-v2.1-zellige](https://huggingface.co/erayyapagci/balbal-v2.1-zellige)
+- Weights: [erayyapagci/balbal-v2](https://huggingface.co/erayyapagci/balbal-v2), [erayyapagci/balbal-v2-manas](https://huggingface.co/erayyapagci/balbal-v2-manas), [erayyapagci/balbal-v2e-zellige](https://huggingface.co/erayyapagci/balbal-v2e-zellige)
 - Code (inference, streaming, training): https://github.com/erayyap/balbal
 
-The code is Apache-2.0. The model weights have their own license (balbal Community License 1.1 for balbal-v2 and balbal-v2-manas, CC BY-NC-SA 4.0 for balbal-v2.1-zellige; on the model pages).
+The code is Apache-2.0. The model weights have their own license (balbal Community License 1.1 for balbal-v2 and balbal-v2-manas, CC BY-NC-SA 4.0 for balbal-v2e-zellige; on the model pages).

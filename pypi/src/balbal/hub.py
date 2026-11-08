@@ -4,9 +4,9 @@ BALBAL_CACHE or cache_dir= moves it). Only what the CPU runtime needs is fetched
 resolves outside the graph's directory.
 
 A model is one of:
-  a registry name   balbal-v2 / balbal-v2-manas / balbal-v2.1-zellige (short: v2, manas, zellige): erayyapagci/<name>, revisions pinned
+  a registry name   balbal-v2 / balbal-v2-manas / balbal-v2e-zellige (short: v2, manas, zellige): erayyapagci/<name>, revisions pinned
                     to the weights this release was tested with (decoder settings in configs/ belong to them); revision='main' takes
-                    the latest upload. balbal-v2.1-zellige (Moroccan Darija) is released under CC BY-NC-SA 4.0 (non-commercial);
+                    the latest upload. balbal-v2e-zellige (Moroccan Darija) is released under CC BY-NC-SA 4.0 (non-commercial);
                     the others under the balbal Community License 1.1. Its model.json says so ("license"), and the first download
                     / load prints a notice (license_notice)
   a local folder    model.json, onnx/, lm/ (and optionally decoder.json), used as it is
@@ -17,24 +17,27 @@ import os
 import sys
 from pathlib import Path
 
-MODELS = ('balbal-v2', 'balbal-v2-manas', 'balbal-v2.1-zellige')
+MODELS = ('balbal-v2', 'balbal-v2-manas', 'balbal-v2e-zellige')
 ALIASES = {'v2': 'balbal-v2', 'balbal': 'balbal-v2', 'manas': 'balbal-v2-manas', 'v2-manas': 'balbal-v2-manas',
-           'zellige': 'balbal-v2.1-zellige', 'v2.1': 'balbal-v2.1-zellige', 'v2.1-zellige': 'balbal-v2.1-zellige'}
+           'zellige': 'balbal-v2e-zellige', 'v2e': 'balbal-v2e-zellige', 'v2e-zellige': 'balbal-v2e-zellige',
+           # the model's first name (pip 0.6.0, renamed 2026-11-08; "e" = experimental) keeps working
+           'balbal-v2.1-zellige': 'balbal-v2e-zellige', 'v2.1': 'balbal-v2e-zellige', 'v2.1-zellige': 'balbal-v2e-zellige'}
 REPOS = {'balbal-v2': 'erayyapagci/balbal-v2', 'balbal-v2-manas': 'erayyapagci/balbal-v2-manas',
-         'balbal-v2.1-zellige': 'erayyapagci/balbal-v2.1-zellige'}
+         'balbal-v2e-zellige': 'erayyapagci/balbal-v2e-zellige'}
+OLD_REPOS = {'erayyapagci/balbal-v2.1-zellige': 'balbal-v2e-zellige'}   # renamed repo (Hugging Face redirects it)
 REVISIONS = {'balbal-v2': '2729f924ea12e2cc236eb7350d11c0c83ee3fa6a', 'balbal-v2-manas': 'c651a680a9147b0a7eb3fd7f5f4f914f3f4ddc25',
-             'balbal-v2.1-zellige': '938a21998c56216386b53280cde0bf6037995cc1'}
+             'balbal-v2e-zellige': '9bc90a6e2f9165cd1309c2de19329c1b073a65b1'}
 # Licence of each model's weights (shown by `balbal --help` and in the first-use notice); the models not listed use the balbal Community License 1.1.
 LICENSES = {'balbal-v2': 'balbal Community License 1.1', 'balbal-v2-manas': 'balbal Community License 1.1',
-            'balbal-v2.1-zellige': 'CC BY-NC-SA 4.0 (non-commercial)'}
-LANGUAGE_NAMES = {'balbal-v2': 'Turkish', 'balbal-v2-manas': 'Turkish, English', 'balbal-v2.1-zellige': 'Moroccan Darija'}
+            'balbal-v2e-zellige': 'CC BY-NC-SA 4.0 (non-commercial)'}
+LANGUAGE_NAMES = {'balbal-v2': 'Turkish', 'balbal-v2-manas': 'Turkish, English', 'balbal-v2e-zellige': 'Moroccan Darija'}
 COMMON = ['model.json', 'lm/model.binary', 'lm/tokenizer.model']
 EXTRA = ['decoder.json']   # fetched for other repos when present: their own decoder settings
 GRAPHS = {'fast': ['onnx/model.onnx', 'onnx/model.onnx.data'], 'onnx': ['onnx/model-plain.onnx', 'onnx/model-plain.onnx.data']}
 # Models released as one plain-operator graph only (no custom-operator "fast" graph): every runtime loads onnx/model.onnx (engine.ONNX_ONLY).
-ONNX_ONLY = {'balbal-v2.1-zellige': ['onnx/model.onnx']}
+ONNX_ONLY = {'balbal-v2e-zellige': ['onnx/model.onnx']}
 SIZES = {'balbal-v2': {'fast': '590 MB', 'onnx': '680 MB'}, 'balbal-v2-manas': {'fast': '1.1 GB', 'onnx': '1.6 GB'},
-         'balbal-v2.1-zellige': {'fast': '1.4 GB', 'onnx': '1.4 GB'}}
+         'balbal-v2e-zellige': {'fast': '1.4 GB', 'onnx': '1.4 GB'}}
 
 
 def graph_files(name, runtime):
@@ -90,6 +93,7 @@ def resolve(model):
     if path.is_dir(): return 'local', path
     for registry, repo in REPOS.items():   # the registry model's own Hugging Face repo id is the registry model
         if text == repo: return 'registry', registry
+    if text in OLD_REPOS: return 'registry', OLD_REPOS[text]
     parts = text.split('/')
     if len(parts) == 2 and all(parts) and not text.startswith(('.', '~')) and all(c.isalnum() or c in '-_.' for p in parts for c in p):
         return 'repo', text
