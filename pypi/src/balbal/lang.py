@@ -41,7 +41,7 @@ LANGUAGES = {
     'az': Language('az', turkic_lower, turkic_capitalize),
 }
 NAMES = {'tr': 'turkish', 'en': 'english', 'az': 'azerbaijani', 'kk': 'kazakh', 'uz': 'uzbek', 'ky': 'kyrgyz', 'tk': 'turkmen',
-         'tt': 'tatar', 'ba': 'bashkir', 'ug': 'uyghur', 'ar': 'arabic', 'ary': 'moroccan arabic', 'fa': 'persian', 'ru': 'russian',
+         'tt': 'tatar', 'ba': 'bashkir', 'ug': 'uyghur', 'ar': 'arabic', 'ary': 'moroccan arabic', 'grc': 'ancient greek', 'fa': 'persian', 'ru': 'russian',
          'de': 'german', 'fr': 'french', 'es': 'spanish'}
 
 

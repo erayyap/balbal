@@ -19,6 +19,10 @@ The first run downloads the model from Hugging Face (balbal-v2: ~590 MB, once); 
 Community License 1.1 of the two models above; balbal prints a notice naming the license the first time it downloads it. It writes the
 decoded Arabic text as is (no casing, no number writing).
 
+**balbal-v2e-calliope** (`--model calliope`) is an experimental Ancient Greek model for classical (reconstructed or Erasmian)
+pronunciation, ~1.3 GB download, trained on 100% synthetic speech; balbal Community License 1.1. It writes lowercase polytonic
+Greek without punctuation.
+
 Output: cased, punctuated text with per-word timestamps and confidences; spoken numbers come out as digits. Files, folders,
 subtitles, live microphone input and an OpenAI-compatible server are covered below.
 
@@ -186,7 +190,7 @@ with; `revision='main'` takes the latest upload.
 ## Links
 
 - Model page: https://erayy.com/balbal
-- Weights: [erayyapagci/balbal-v2](https://huggingface.co/erayyapagci/balbal-v2), [erayyapagci/balbal-v2-manas](https://huggingface.co/erayyapagci/balbal-v2-manas), [erayyapagci/balbal-v2e-zellige](https://huggingface.co/erayyapagci/balbal-v2e-zellige)
+- Weights: [erayyapagci/balbal-v2](https://huggingface.co/erayyapagci/balbal-v2), [erayyapagci/balbal-v2-manas](https://huggingface.co/erayyapagci/balbal-v2-manas), [erayyapagci/balbal-v2e-zellige](https://huggingface.co/erayyapagci/balbal-v2e-zellige), [erayyapagci/balbal-v2e-calliope](https://huggingface.co/erayyapagci/balbal-v2e-calliope)
 - Code (inference, streaming, training): https://github.com/erayyap/balbal
 
-The code is Apache-2.0. The model weights have their own license (balbal Community License 1.1 for balbal-v2 and balbal-v2-manas, CC BY-NC-SA 4.0 for balbal-v2e-zellige; on the model pages).
+The code is Apache-2.0. The model weights have their own license (balbal Community License 1.1 for balbal-v2, balbal-v2-manas and balbal-v2e-calliope, CC BY-NC-SA 4.0 for balbal-v2e-zellige; on the model pages).

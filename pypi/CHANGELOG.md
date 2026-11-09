@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3
+
+- New model: **balbal-v2e-calliope** (`--model calliope`, `balbal.load('calliope')`), experimental Ancient Greek speech recognition
+  (language `grc`, polytonic, lowercase, no punctuation) for classical (reconstructed or Erasmian) pronunciation. balbal-v2-manas
+  architecture (40 ms frames) fine-tuned on 100% synthetic speech, 6-gram piece KenLM. One plain-operator graph (`onnx/model.onnx` +
+  `model.onnx.data`, ~1.3 GB fp32); `--runtime fast` loads the same graph. balbal Community License 1.1.
+  Hugging Face repo: [erayyapagci/balbal-v2e-calliope](https://huggingface.co/erayyapagci/balbal-v2e-calliope).
+- balbal-v2, balbal-v2-manas and balbal-v2e-zellige are unchanged.
+
 ## 0.6.2
 
 - `balbal.__version__` (and `balbal --version`, the server's `/health`) said 0.6.0 in the 0.6.1 package; it now matches the

@@ -3,6 +3,7 @@
   balbal run speech.wav                      text of each file (balbal-v2; downloaded from Hugging Face on first use)
   balbal run --model manas a.wav b.mp3       balbal-v2-manas (Turkish + English)
   balbal run --model zellige a.wav           balbal-v2e-zellige (Moroccan Darija; CC BY-NC-SA 4.0, non-commercial; no live streaming)
+  balbal run --model calliope a.wav          balbal-v2e-calliope (Ancient Greek, classical pronunciation)
   balbal run --json speech.wav               one JSON line per file: text, per-word timestamps, timings
   balbal run --format srt -o subs/ videos/   one subtitle file per audio / video file of a folder (txt, json, srt, vtt)
   balbal run --jobs 4 -o out/ calls/         four processes at once (CPU threads are split between them)
@@ -40,7 +41,7 @@ def model_list():
 
 def model_options(p):
     p.add_argument('--model', '-m', default='balbal-v2',
-                   help=f'{model_list()} - short: v2, manas, zellige - a model folder or a Hugging Face repo id owner/name; default balbal-v2')
+                   help=f'{model_list()} - short: v2, manas, zellige, calliope - a model folder or a Hugging Face repo id owner/name; default balbal-v2')
     p.add_argument('--runtime', choices=RUNTIMES, default='fast', help='fast (custom kernels, default) or onnx (standard operators)')
     p.add_argument('--revision', default=None, help='Hugging Face revision (default: the tested one, main for other repos)')
 

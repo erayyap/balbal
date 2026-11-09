@@ -4,7 +4,8 @@ BALBAL_CACHE or cache_dir= moves it). Only what the CPU runtime needs is fetched
 resolves outside the graph's directory.
 
 A model is one of:
-  a registry name   balbal-v2 / balbal-v2-manas / balbal-v2e-zellige (short: v2, manas, zellige): erayyapagci/<name>, revisions pinned
+  a registry name   balbal-v2 / balbal-v2-manas / balbal-v2e-zellige / balbal-v2e-calliope (short: v2, manas, zellige, calliope):
+                    erayyapagci/<name>, revisions pinned
                     to the weights this release was tested with (decoder settings in configs/ belong to them); revision='main' takes
                     the latest upload. balbal-v2e-zellige (Moroccan Darija) is released under CC BY-NC-SA 4.0 (non-commercial);
                     the others under the balbal Community License 1.1. Its model.json says so ("license"), and the first download
@@ -17,27 +18,29 @@ import os
 import sys
 from pathlib import Path
 
-MODELS = ('balbal-v2', 'balbal-v2-manas', 'balbal-v2e-zellige')
+MODELS = ('balbal-v2', 'balbal-v2-manas', 'balbal-v2e-zellige', 'balbal-v2e-calliope')
 ALIASES = {'v2': 'balbal-v2', 'balbal': 'balbal-v2', 'manas': 'balbal-v2-manas', 'v2-manas': 'balbal-v2-manas',
            'zellige': 'balbal-v2e-zellige', 'v2e': 'balbal-v2e-zellige', 'v2e-zellige': 'balbal-v2e-zellige',
            # the model's first name (pip 0.6.0, renamed 2026-11-08; "e" = experimental) keeps working
-           'balbal-v2.1-zellige': 'balbal-v2e-zellige', 'v2.1': 'balbal-v2e-zellige', 'v2.1-zellige': 'balbal-v2e-zellige'}
+           'balbal-v2.1-zellige': 'balbal-v2e-zellige', 'v2.1': 'balbal-v2e-zellige', 'v2.1-zellige': 'balbal-v2e-zellige',
+           'calliope': 'balbal-v2e-calliope', 'v2e-calliope': 'balbal-v2e-calliope'}
 REPOS = {'balbal-v2': 'erayyapagci/balbal-v2', 'balbal-v2-manas': 'erayyapagci/balbal-v2-manas',
-         'balbal-v2e-zellige': 'erayyapagci/balbal-v2e-zellige'}
+         'balbal-v2e-zellige': 'erayyapagci/balbal-v2e-zellige', 'balbal-v2e-calliope': 'erayyapagci/balbal-v2e-calliope'}
 OLD_REPOS = {'erayyapagci/balbal-v2.1-zellige': 'balbal-v2e-zellige'}   # renamed repo (Hugging Face redirects it)
 REVISIONS = {'balbal-v2': '2729f924ea12e2cc236eb7350d11c0c83ee3fa6a', 'balbal-v2-manas': 'c651a680a9147b0a7eb3fd7f5f4f914f3f4ddc25',
-             'balbal-v2e-zellige': '9bc90a6e2f9165cd1309c2de19329c1b073a65b1'}
+             'balbal-v2e-zellige': '9bc90a6e2f9165cd1309c2de19329c1b073a65b1', 'balbal-v2e-calliope': '2fe67f961261b935215ad1d046c34e5424948f3b'}
 # Licence of each model's weights (shown by `balbal --help` and in the first-use notice); the models not listed use the balbal Community License 1.1.
 LICENSES = {'balbal-v2': 'balbal Community License 1.1', 'balbal-v2-manas': 'balbal Community License 1.1',
-            'balbal-v2e-zellige': 'CC BY-NC-SA 4.0 (non-commercial)'}
-LANGUAGE_NAMES = {'balbal-v2': 'Turkish', 'balbal-v2-manas': 'Turkish, English', 'balbal-v2e-zellige': 'Moroccan Darija'}
+            'balbal-v2e-zellige': 'CC BY-NC-SA 4.0 (non-commercial)', 'balbal-v2e-calliope': 'balbal Community License 1.1'}
+LANGUAGE_NAMES = {'balbal-v2': 'Turkish', 'balbal-v2-manas': 'Turkish, English', 'balbal-v2e-zellige': 'Moroccan Darija',
+                  'balbal-v2e-calliope': 'Ancient Greek'}
 COMMON = ['model.json', 'lm/model.binary', 'lm/tokenizer.model']
 EXTRA = ['decoder.json']   # fetched for other repos when present: their own decoder settings
 GRAPHS = {'fast': ['onnx/model.onnx', 'onnx/model.onnx.data'], 'onnx': ['onnx/model-plain.onnx', 'onnx/model-plain.onnx.data']}
 # Models released as one plain-operator graph only (no custom-operator "fast" graph): every runtime loads onnx/model.onnx (engine.ONNX_ONLY).
-ONNX_ONLY = {'balbal-v2e-zellige': ['onnx/model.onnx']}
+ONNX_ONLY = {'balbal-v2e-zellige': ['onnx/model.onnx'], 'balbal-v2e-calliope': ['onnx/model.onnx', 'onnx/model.onnx.data']}   # calliope: weights in .data
 SIZES = {'balbal-v2': {'fast': '590 MB', 'onnx': '680 MB'}, 'balbal-v2-manas': {'fast': '1.1 GB', 'onnx': '1.6 GB'},
-         'balbal-v2e-zellige': {'fast': '1.4 GB', 'onnx': '1.4 GB'}}
+         'balbal-v2e-zellige': {'fast': '1.4 GB', 'onnx': '1.4 GB'}, 'balbal-v2e-calliope': {'fast': '1.3 GB', 'onnx': '1.3 GB'}}
 
 
 def graph_files(name, runtime):

@@ -160,6 +160,20 @@ def test_zellige_registry_and_info(tmp_path):
     assert lang.itn_functions('ary') is None   # Moroccan Darija: no number writer, no casing
 
 
+def test_calliope_registry_and_info(tmp_path):
+    from balbal import hub
+    from balbal.engine import model_info, ONNX_ONLY
+    for name in ('calliope', 'v2e-calliope', 'balbal-v2e-calliope', 'erayyapagci/balbal-v2e-calliope'):
+        assert hub.resolve(name) == ('registry', 'balbal-v2e-calliope')
+    assert hub.resolve('zellige') == ('registry', 'balbal-v2e-zellige')
+    assert 'NC' not in hub.LICENSES['balbal-v2e-calliope'] and 'balbal-v2e-calliope' in ONNX_ONLY
+    assert hub.graph_files('balbal-v2e-calliope', 'onnx') == hub.graph_files('balbal-v2e-calliope', 'fast') == ['onnx/model.onnx', 'onnx/model.onnx.data']
+    info = model_info(tmp_path, 'balbal-v2e-calliope')
+    assert info['languages'] == ['grc'] and info['frame_samples'] == 640
+    from balbal import lang
+    assert lang.itn_functions(info['itn']) is None and lang.NAMES['grc'] == 'ancient greek'
+
+
 def test_version_matches_package_metadata():
     import balbal
     from importlib import metadata

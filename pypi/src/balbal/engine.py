@@ -48,8 +48,9 @@ SINGLE_PASS_SECONDS = 30.   # clips up to this length are never windowed
 # No word at or above this confidence -> result['no_speech']. On 38 hand-checked phone clips + synthetic silence / noise / tones /
 # clicks: every speech clip has a word >= 0.26, non-speech input stays <= 0.10 (the models can write a short word over digital silence).
 NO_SPEECH_CONFIDENCE = 0.15
-LONG_WINDOWS = {'balbal-v2': (30., 10.), 'balbal-v2-manas': (30., 10.), 'balbal-v2e-zellige': (30., 10.)}   # family defaults; model.json "long_windows" wins
-FAMILY_LANGUAGES = {'balbal-v2': ['tr'], 'balbal-v2-manas': ['tr', 'en'], 'balbal-v2e-zellige': ['ary']}
+LONG_WINDOWS = {'balbal-v2': (30., 10.), 'balbal-v2-manas': (30., 10.), 'balbal-v2e-zellige': (30., 10.),
+                'balbal-v2e-calliope': (30., 10.)}   # family defaults; model.json "long_windows" wins
+FAMILY_LANGUAGES = {'balbal-v2': ['tr'], 'balbal-v2-manas': ['tr', 'en'], 'balbal-v2e-zellige': ['ary'], 'balbal-v2e-calliope': ['grc']}
 FRAME_SAMPLES = {'balbal-v2e-zellige': 1280}   # 80 ms output frames (8x subsampling); the other models 640
 ONNX_ONLY = tuple(hub.ONNX_ONLY)
 
@@ -125,7 +126,8 @@ class Model:
     """A loaded balbal model. Load once and reuse; one instance must not be called from two threads at once (make one per thread).
 
     model      'balbal-v2' (default, 45M, Turkish), 'balbal-v2-manas' (313M, Turkish + English) or 'balbal-v2e-zellige' (Moroccan
-               Darija, CC BY-NC-SA 4.0 non-commercial; offline only); short: 'v2', 'manas', 'zellige'. Also a
+               Darija, CC BY-NC-SA 4.0 non-commercial; offline only) or 'balbal-v2e-calliope' (Ancient Greek, classical
+               pronunciation); short: 'v2', 'manas', 'zellige', 'calliope'. Also a
                local model folder or the Hugging Face repo id ('owner/name') of a model trained on a balbal architecture
     runtime    'fast' (default) or 'onnx' (standard operators only)
     threads    CPU threads (default: BALBAL_THREADS, else min(8, CPU count))

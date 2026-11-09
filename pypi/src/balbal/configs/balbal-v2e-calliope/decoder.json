@@ -1,0 +1,11 @@
+{
+  "alpha": 1.5,
+  "beta": 2.5,
+  "temperature": 1.2,
+  "blank_bias": 0.0,
+  "beam": 64,
+  "top_tokens": 12,
+  "threshold": 8.0,
+  "blank_collapse": null,
+  "hotword_bonus": 1.0
+}
