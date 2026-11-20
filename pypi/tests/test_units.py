@@ -22,6 +22,27 @@ def test_itn_text(spoken, digits):
     assert itn_text(spoken) == digits
 
 
+@pytest.mark.parametrize('spoken, written', [
+    ('saat ikide', "saat 2'de"), ('beşten sonra', "5'ten sonra"), ('ayın onunda', "ayın 10'unda"), ('yirmi dördüne kadar', "24'üne kadar"),
+    ('saat dokuzu beş geçe', "saat 9'u 5 geçe"), ('beşe çeyrek var', "5'e çeyrek var"), ('saat onda', "saat 10'da"),
+    ('on gün sonra', '10 gün sonra'), ('On.', '10.'), ('bin lira', '1000 lira'), ('yüzde yirmi indirim', '%20 indirim'),
+    ('saat sekiz buçukta', "saat 8.30'da"), ('yarın saat on iki buçuk', 'yarın saat 12.30'), ('ayın on beşinde', "ayın 15'inde"),
+    # stay words: pronouns / nouns, ordinals, distributives, idioms, durations, possessives without a time word
+    ('onu aradım', 'onu aradım'), ('ona söyledim', 'ona söyledim'), ('yarın onu ararım', 'yarın onu ararım'), ('biri aradı', 'biri aradı'),
+    ('ikisi de', 'ikisi de'), ('altında', 'altında'), ('yüzü kızardı', 'yüzü kızardı'), ('ikinci kat', 'ikinci kat'), ('beşer tane', 'beşer tane'),
+    ('ikide bir arıyorlar', 'ikide bir arıyorlar'), ('bir buçuk hafta', 'bir buçuk hafta'), ('bir gün', 'bir gün'), ('yediler', 'yediler'), ('x bin lira', 'x bin lira'),
+])
+def test_itn_call_conventions(spoken, written):
+    assert itn_text(spoken) == written
+
+
+def test_itn_words_conventions_keep_timing():
+    ws = [dict(word='saat', start=0.0, end=0.3, confidence=1.0), dict(word='sekiz', start=0.3, end=0.6, confidence=0.9),
+          dict(word='buçukta', start=0.6, end=1.0, confidence=0.7)]
+    out = itn_words(ws)
+    assert [w['word'] for w in out] == ['saat', "8.30'da"] and out[1]['start'] == 0.3 and out[1]['end'] == 1.0 and out[1]['confidence'] == 0.7
+
+
 def test_itn_words_merges_runs_with_lowest_confidence():
     words = [dict(word='yirmi', start=0.0, end=0.4, confidence=0.9), dict(word='beş', start=0.4, end=0.7, confidence=0.6),
              dict(word='lira', start=0.8, end=1.1, confidence=0.95)]

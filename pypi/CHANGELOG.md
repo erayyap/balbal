@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.4
+
+- Turkish ITN writes numbers the way call transcripts do (all Turkish models; on by default, `itn=False` turns it off):
+  a single suffixed number word gets digits and an apostrophe ('saat ikide' -> "saat 2'de", 'beşten' -> "5'ten",
+  'ayın onunda' -> "ayın 10'unda", 'yirmi dördüne' -> "24'üne"); a lone 'on' / 'yüz' / 'bin' before a unit ('on gün', 'bin lira') or
+  as the whole text becomes digits; 'yüzde 20' -> '%20'; a half hour after a time word -> 'saat 8.30', "sabah 8.30'da".
+  Pronoun and noun readings stay words ('onu', 'ona', 'biri', 'ikisi de', 'altında', 'yüzü'), and so do ordinals ('ikinci'),
+  distributives ('beşer') and the idiom 'ikide bir'. On Turkish customer-call transcripts this lowers WER by 0.06-0.08 points
+  (per-clip, two held-out call sets) with no change elsewhere; model outputs are unchanged.
+
 ## 0.6.3
 
 - New model: **balbal-v2e-calliope** (`--model calliope`, `balbal.load('calliope')`), experimental Ancient Greek speech recognition

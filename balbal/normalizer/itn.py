@@ -8,6 +8,11 @@ The balbal models are trained on words-only labels, so it writes numbers as word
   punctuation, which is re-attached after the digits; capitalised words match case-insensitively. A suffixed number
   word that continues a run takes the suffix after an apostrophe ('kırk dokuzdu' -> "49'du"); a suffixed word on its
   own is left alone. The rest of the text is unchanged.
+  Then the number-writing conventions of Turkish call transcripts (0.6.4): a single suffixed number word is written with digits and an
+  apostrophe ('saat ikide' -> "saat 2'de", 'beşten' -> "5'ten", 'ayın onunda' -> "ayın 10'unda", 'yirmi dördüne' -> "24'üne");
+  possessive forms (dokuzu, yirmisinde) and the ambiguous stems bir / on / yüz / bin (biri, onu, ona) only after a time or date word, ordinals
+  (ikinci), distributives (beşer) and the idiom 'ikide bir' stay words; a lone on / yüz / bin before a unit ('on gün', 'bin lira') or as the
+  whole text becomes digits; 'yüzde 20' -> '%20'; a half hour after a time word -> 'saat 8.30', "sabah 8.30'da".
 - itn_digits(text): scoring form for already-normalized (lowercase, no punctuation) text. Numbers are spelled digit by
   digit ('doksan yüz yirmi üç' == 'dokuz sıfır bir iki üç' == '9 0 1 2 3'), removing the reading/grouping ambiguity of
   phone numbers and codes; digits already present are kept.
@@ -85,12 +90,75 @@ def itn_text(text):
 
 
 def itn_words(words):
-    """itn_text over timed words [{'word', 'start', 'end'}]: a number run becomes one entry spanning its words."""
-    return [dict(words[i], word=tok, end=words[j - 1]['end']) for tok, i, j in _itn_runs([w['word'] for w in words])]
+    """itn_text over timed words [{'word', 'start', 'end'(, 'confidence')}]: a number run becomes one entry spanning its words (with
+    the lowest confidence of them)."""
+    out = []
+    for tok, i, j in _itn_runs([w['word'] for w in words]):
+        w = dict(words[i], word=tok, end=words[j - 1]['end'])
+        if j - i > 1 and 'confidence' in w: w['confidence'] = min(x['confidence'] for x in words[i:j])
+        out.append(w)
+    return out
 
 
 def _itn_runs(toks):
-    """Tokens -> [(output token, first input index, end input index)]."""
+    """Tokens -> [(output token, first input index, end input index)]: number runs, then the writing conventions (_conventions)."""
+    return _conventions(_number_runs(toks))
+
+
+VAL = {**UNIT, **TENS, 'yüz': 100, 'bin': 1000}
+STEMS = sorted({**{w: w for w in VAL}, 'dörd': 'dört'}.items(), key=lambda kv: -len(kv[0]))   # longest first; dörd = softened dört
+CASE = {'de', 'da', 'te', 'ta', 'e', 'a', 'ye', 'ya', 'den', 'dan', 'ten', 'tan'}
+POSS = {'i', 'ı', 'u', 'ü', 'si', 'sı', 'su', 'sü', 'yi', 'yı', 'yu', 'yü'} | {
+    p + c for p in ('i', 'ı', 'u', 'ü', 'si', 'sı', 'su', 'sü') for c in ('nde', 'nda', 'ne', 'na', 'ni', 'nı', 'nu', 'nü', 'nden', 'ndan')}
+STEM_AMBIG = {'bir', 'on', 'yüz', 'bin'}                       # biri, onu, ona, onda, yüzü, bini: pronoun / noun readings
+CTX_STRONG = {'saat', 'saati', 'ayın'}                          # context that makes those stems numbers
+CTX = CTX_STRONG | {'sabah', 'akşam', 'öğlen', 'öğle', 'öğleden', 'gece', 'tarih', 'tarihi', 'tarihinde', 'günü'}
+TIME = {'saat', 'sabah', 'akşam', 'öğlen', 'öğle', 'öğleden', 'sonra', 'gece', 'yarın', 'bugün'}
+UNITW = {'gün', 'günde', 'günü', 'gündür', 'saat', 'saattir', 'dakika', 'dakikada', 'dakikadır', 'saniye', 'yaşında', 'yaş', 'yaşındayım', 'lira',
+         'tl', 'liralık', 'lirası', 'lirasını', 'tane', 'kişi', 'kişiyiz', 'ay', 'aydır', 'yıl', 'yıldır', 'sene', 'senedir', 'hafta', 'haftadır',
+         'kilo', 'metre', 'adet', 'kere', 'defa', 'sefer', 'kat', 'numara', 'puan', 'dolar', 'euro', 'avro', 'gb', 'mb', 'taksit', 'ile', 'bin', 'milyon'}
+LONE = {'on': 10, 'yüz': 100, 'bin': 1000}
+BUCUK = {'buçuk': '', 'buçukta': "'da", 'buçuğa': "'a", 'buçuktan': "'dan"}
+
+
+def _suffixed(core):
+    """'dördüne' -> (4, 'üne', 'poss', 'dört'); None unless a number stem plus a case / possessive suffix."""
+    lc = low(core)
+    for st, w in STEMS:
+        if lc.startswith(st) and len(lc) > len(st):
+            suf = lc[len(st):]
+            if suf in CASE or suf in POSS: return VAL[w], core[len(st):], ('case' if suf in CASE else 'poss'), w
+    return None
+
+
+def _conventions(runs):
+    """Number-writing conventions over the (token, i, j) runs; merged entries span both inputs (itn_words keeps the timing)."""
+    out = []
+    for k, (tok, i, j) in enumerate(runs):
+        pre, core, post = _split(tok); lc = low(core)
+        pp, pc, ppost = _split(out[-1][0]) if out else ('', '', '')
+        prev = low(pc); attached = bool(out) and not ppost and not pre   # previous token ends without punctuation
+        nxt = low(_split(runs[k + 1][0])[1]) if k + 1 < len(runs) else ''
+        if core.isdigit() and prev == 'yüzde' and attached:                                       # yüzde 20 -> %20
+            out[-1] = (f'{pp}%{core}{post}', out[-1][1], j); continue
+        if lc in BUCUK and prev.isdigit() and attached and int(prev) <= 24 and len(out) >= 2 and low(_split(out[-2][0])[1]) in TIME:
+            out[-1] = (f'{pp}{prev}.30{BUCUK[lc]}{post}', out[-1][1], j); continue                # saat 8 buçukta -> saat 8.30'da
+        s = None if (pre or j - i > 1 or (lc == 'ikide' and nxt == 'bir')) else _suffixed(core)
+        if s:
+            v, suf, kind, w = s
+            if prev.isdigit() and attached and int(prev) >= 10 and int(prev) % 10 == 0 and v < 10:   # '20 dördüne' -> 24'üne
+                out[-1] = (f"{pp}{int(prev) + v}'{suf}{post}", out[-1][1], j); continue
+            ctx = prev in (CTX_STRONG if w in STEM_AMBIG else CTX) or (prev.isdigit() and attached)
+            if (kind == 'case' and w not in STEM_AMBIG) or ctx:
+                out.append((f"{v}'{suf}{post}", i, j)); continue
+        if lc in LONE and not pre and not prev.isdigit() and not (len(prev) == 1 and prev.isalpha()) and (nxt in UNITW or len(runs) == 1):   # on gün -> 10 gün; 'x bin lira' stays
+            out.append((f'{LONE[lc]}{post}', i, j)); continue
+        out.append((tok, i, j))
+    return out
+
+
+def _number_runs(toks):
+    """Tokens -> [(output token, first input index, end input index)] for maximal number-word runs (the 0.6.3 ITN)."""
     out, i = [], 0
     while i < len(toks):
         pre, core, post = _split(toks[i])
