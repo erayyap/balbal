@@ -22,6 +22,9 @@ The balbal models are trained on words-only labels, so it writes numbers as word
   letter-by-letter spelling, never 'A Ş') and runs of letter names ('es em es' -> 'SMS', 'de ne es' -> 'DNS', 'be de de ka' -> 'BDDK') when
   they hold at least two unambiguous letter names (or three names with one).
 
+  0.6.6: decades and centuries with a plural suffix keep the whole number ('bin sekiz yüzlerden' -> "1800'lerden", was '1008 yüzlerden';
+  'bin dokuz yüz seksenlerde' -> "1980'lerde", 'iki binlerin' -> "2000'lerin").
+
 Known ambiguity: 'doksan bir' for a spoken 'doksan, bir' reads as 91.
 """
 import re
@@ -232,6 +235,11 @@ def _letters(runs):
     return out
 
 
+# Suffix on the last word of a number run: up to 4 letters ('kırk dokuzdu' -> 49'du), or a plural -ler/-lar with up to 5 more
+# (0.6.6: 'bin sekiz yüzlerden' -> 1800'lerden, 'bin dokuz yüz seksenlerde' -> 1980'lerde); -lerce/-larca stays a word ('on binlerce').
+SUFFIX = re.compile(r'[a-zçğıöşü]{1,4}|l[ae]r(?!c[ae])[a-zçğıöşü]{0,5}')
+
+
 def _number_runs(toks):
     """Tokens -> [(output token, first input index, end input index)] for maximal number-word runs (the 0.6.3 ITN)."""
     out, i = [], 0
@@ -242,7 +250,7 @@ def _number_runs(toks):
         while j < len(toks):
             p0, c, p1 = _split(toks[j])
             if low(c) not in NUM and j > i and not p0:   # suffixed last number word continuing a run: 'kırk dokuzdu' -> 49'du
-                w = max((n for n in NUM if low(c).startswith(n) and re.fullmatch(r'[a-zçğıöşü]{1,4}', low(c)[len(n):])), key=len, default=None)
+                w = max((n for n in NUM if low(c).startswith(n) and SUFFIX.fullmatch(low(c)[len(n):])), key=len, default=None)
                 if w: words.append(w); j += 1; last_post = "'" + c[len(w):] + p1
                 break
             if low(c) not in NUM or (p0 and j > i): break

@@ -57,6 +57,17 @@ def test_itn_date_splits(spoken, written):
 
 
 @pytest.mark.parametrize('spoken,written', [
+    ('Haiti bin sekiz yüzlerden beri', "Haiti 1800'lerden beri"), ('bin dokuz yüzlerde', "1900'lerde"),
+    ('bin dokuz yüz seksenlerde', "1980'lerde"), ('bin dokuz yüz altmışlarda', "1960'larda"), ('iki binlerin başında', "2000'lerin başında"),
+    ('bin sekiz yüzler', "1800'ler"), ('kırk dokuzdu', "49'du"), ('iki binli yıllar', "2000'li yıllar"),
+    # -lerce / -larca stays a word, and so does a plural with no number before it
+    ('on binlerce kişi', 'on binlerce kişi'), ('yüzlerce kişi', 'yüzlerce kişi'), ('yetmişlerin başında', 'yetmişlerin başında'),
+])
+def test_itn_plural_suffix(spoken, written):
+    assert itn_text(spoken) == written
+
+
+@pytest.mark.parametrize('spoken,written', [
     ('yüz elli T L kargo', '150 TL kargo'), ('E F T yapabilir miyim?', 'EFT yapabilir miyim?'), ('S S L hand shake', 'SSL hand shake'),
     ('dün de ne es ayarları', 'dün DNS ayarları'), ('es em es de gelmedi', 'SMS de gelmedi'), ('ne es em es geldi', 'ne SMS geldi'),
     ('kuruluşu be de de ka ya tabii', 'kuruluşu BDDK ya tabii'), ('ve te le olarak', 've TL olarak'),

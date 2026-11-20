@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.6
+
+- Turkish ITN: decades and centuries with a plural suffix keep the whole number ('bin sekiz yüzlerden' -> "1800'lerden", was
+  '1008 yüzlerden'; 'bin dokuz yüz seksenlerde' -> "1980'lerde", 'iki binlerin başında' -> "2000'lerin başında"). '-lerce' stays a word
+  ('on binlerce kişi'). FLEURS Turkish test WER with ITN on: balbal-v2-manas 4.17 -> 4.08, balbal-v2 5.30 -> 5.23; call-transcript sets
+  unchanged; model outputs are unchanged.
+
 ## 0.6.5
 
 - Turkish ITN: a date read with digits no longer runs into the year ('sıfır altı sıfır dokuz bin dokuz yüz altmış üç' -> '0 6 0 9 1963',
