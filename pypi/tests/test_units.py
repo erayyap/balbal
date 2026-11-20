@@ -43,6 +43,40 @@ def test_itn_words_conventions_keep_timing():
     assert [w['word'] for w in out] == ['saat', "8.30'da"] and out[1]['start'] == 0.3 and out[1]['end'] == 1.0 and out[1]['confidence'] == 0.7
 
 
+@pytest.mark.parametrize('spoken,written', [
+    ('sıfır altı sıfır dokuz bin dokuz yüz altmış üç', '0 6 0 9 1963'),
+    ('on iki sıfır dört bin dokuz yüz seksen sekiz', '12 0 4 1988'),
+    ('yirmi üç dokuz bin dokuz yüz seksen sekiz', '23 9 1988'),
+    ('on iki iki bin beş', '12 2005'),
+    ('iki yüz elli üç bin dokuz yüz lira', '253900 lira'),
+    ('kırk beş bin dokuz yüz', '45900'),
+    ('sıfır beş yüz otuz iki', '0 532'),
+])
+def test_itn_date_splits(spoken, written):
+    assert itn_text(spoken) == written
+
+
+@pytest.mark.parametrize('spoken,written', [
+    ('yüz elli T L kargo', '150 TL kargo'), ('E F T yapabilir miyim?', 'EFT yapabilir miyim?'), ('S S L hand shake', 'SSL hand shake'),
+    ('dün de ne es ayarları', 'dün DNS ayarları'), ('es em es de gelmedi', 'SMS de gelmedi'), ('ne es em es geldi', 'ne SMS geldi'),
+    ('kuruluşu be de de ka ya tabii', 'kuruluşu BDDK ya tabii'), ('ve te le olarak', 've TL olarak'),
+    # ordinary words that are also letter names stay words
+    ('ne de olsa', 'ne de olsa'), ('ay be kardeşim', 'ay be kardeşim'), ('o ne ki', 'o ne ki'), ('bu da ne', 'bu da ne'),
+    ('ben de ne yapayım', 'ben de ne yapayım'), ('ve ve ve', 've ve ve'), ('he he', 'he he'), ('Evet. A', 'Evet. A'), ('T. C.', 'T. C.'),
+    # letter-by-letter spellings and codes stay spaced, and so does A Ş
+    ('Tabii. A R S L A N.', 'Tabii. A R S L A N.'), ('kodum E V 4 4 ve T C', 'kodum E V 4 4 ve T C'), ('C E altı beş', 'C E 6 5'),
+    ('Avek A Ş konumu', 'Avek A Ş konumu'),
+])
+def test_itn_letters(spoken, written):
+    assert itn_text(spoken) == written
+
+
+def test_itn_words_letters_keep_timing():
+    ws = [dict(word=w, start=float(i), end=i + 1.0) for i, w in enumerate(['es', 'em', 'es', 'geldi'])]
+    out = itn_words(ws)
+    assert [w['word'] for w in out] == ['SMS', 'geldi'] and out[0]['start'] == 0.0 and out[0]['end'] == 3.0
+
+
 def test_itn_words_merges_runs_with_lowest_confidence():
     words = [dict(word='yirmi', start=0.0, end=0.4, confidence=0.9), dict(word='beş', start=0.4, end=0.7, confidence=0.6),
              dict(word='lira', start=0.8, end=1.1, confidence=0.95)]

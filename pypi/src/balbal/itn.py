@@ -17,6 +17,11 @@ The balbal models are trained on words-only labels, so it writes numbers as word
   digit ('doksan yüz yirmi üç' == 'dokuz sıfır bir iki üç' == '9 0 1 2 3'), removing the reading/grouping ambiguity of
   phone numbers and codes; digits already present are kept.
 
+  0.6.5: a date read with digits splits from the year ('sıfır dokuz bin dokuz yüz altmış üç' -> '0 9 1963', 'yirmi üç dokuz bin dokuz yüz
+  seksen' -> '23 9 1980'), and acronyms are joined: 2-3 spaced capitals ('T L' -> 'TL', 'E F T' -> 'EFT'; not next to a digit, not in a
+  letter-by-letter spelling, never 'A Ş') and runs of letter names ('es em es' -> 'SMS', 'de ne es' -> 'DNS', 'be de de ka' -> 'BDDK') when
+  they hold at least two unambiguous letter names (or three names with one).
+
 Known ambiguity: 'doksan bir' for a spoken 'doksan, bir' reads as 91.
 """
 import re
@@ -28,16 +33,20 @@ AMBIG = {'bir', 'on', 'yüz', 'altı', 'bin'}
 
 
 def parse(words):
-    """Number words -> list of numbers (as digit strings), splitting where the grammar cannot continue."""
+    """Number words -> list of numbers (as digit strings), splitting where the grammar cannot continue.
+    Date splits: 'sıfır dokuz bin dokuz yüz ...' -> 0 9 19.. (a digit read after sıfır does not multiply a following bin), and in a run
+    that already holds a number, '<n> bin dokuz yüz ...' -> n 19.. (day / month before a 19xx year: 'yirmi üç dokuz bin dokuz yüz seksen')."""
     out, hi, lo, place = [], 0, 0, None   # place = smallest place filled in the open number (None = no open number)
 
     def close():
         nonlocal hi, lo, place
         if place is not None: out.append(str(hi + lo))
         hi, lo, place = 0, 0, None
-    for w in words:
+    for k, w in enumerate(words):
+        nxt = words[k + 1] if k + 1 < len(words) else ''
         if w == 'sıfır': close(); out.append('0'); continue
         if w in UNIT:
+            if k > 0 and words[k - 1] == 'sıfır' and nxt == 'bin': close(); out.append(str(UNIT[w])); continue
             if place is not None and place > 1: lo += UNIT[w]; place = 1
             else: close(); lo, place = UNIT[w], 1
         elif w in TENS:
@@ -48,7 +57,8 @@ def parse(words):
             elif place is not None and place > 100: lo += 100; place = 100
             else: close(); lo, place = 100, 100
         elif w == 'bin':
-            if place is not None and place < 1000: hi, lo, place = hi + (lo or 1)*1000, 0, 1000
+            year = out and hi == 0 and place is not None and lo < 100 and words[k + 1:k + 3] == ['dokuz', 'yüz']
+            if place is not None and place < 1000 and not year: hi, lo, place = hi + (lo or 1)*1000, 0, 1000
             else: close(); hi, place = 1000, 1000
         elif w == 'milyon':
             if place is not None and place < 10**6: hi, lo, place = (hi + lo or 1)*10**6, 0, 10**6
@@ -101,8 +111,8 @@ def itn_words(words):
 
 
 def _itn_runs(toks):
-    """Tokens -> [(output token, first input index, end input index)]: number runs, then the writing conventions (_conventions)."""
-    return _conventions(_number_runs(toks))
+    """Tokens -> [(output token, first input index, end input index)]: number runs, the writing conventions (_conventions), letter runs (_letters)."""
+    return _letters(_conventions(_number_runs(toks)))
 
 
 VAL = {**UNIT, **TENS, 'yüz': 100, 'bin': 1000}
@@ -154,6 +164,71 @@ def _conventions(runs):
         if lc in LONE and not pre and not prev.isdigit() and not (len(prev) == 1 and prev.isalpha()) and (nxt in UNITW or len(runs) == 1):   # on gün -> 10 gün; 'x bin lira' stays
             out.append((f'{LONE[lc]}{post}', i, j)); continue
         out.append((tok, i, j))
+    return out
+
+
+# Letter runs (0.6.5). The models write an acronym as spaced capitals ('T L', 'E F T') or as letter names ('es em es', 'be de de ka').
+TR = {'be': 'B', 'ce': 'C', 'çe': 'Ç', 'de': 'D', 'fe': 'F', 'ge': 'G', 'ğe': 'Ğ', 'he': 'H', 'je': 'J', 'ka': 'K', 'ke': 'K', 'le': 'L', 'me': 'M',
+      'ne': 'N', 'pe': 'P', 're': 'R', 'se': 'S', 'şe': 'Ş', 'te': 'T', 've': 'V', 'ye': 'Y', 'ze': 'Z', 'a': 'A', 'e': 'E', 'ı': 'I', 'i': 'İ',
+      'o': 'O', 'ö': 'Ö', 'u': 'U', 'ü': 'Ü'}
+EN = {'es': 'S', 'em': 'M', 'en': 'N', 'el': 'L', 'ef': 'F', 'pi': 'P', 'ti': 'T', 'di': 'D', 'ey': 'A', 'ay': 'I', 'bi': 'B', 'kyu': 'Q', 'vi': 'V'}
+NAME = {**TR, **EN}
+STRONG = {'be', 'ce', 'çe', 'ge', 'je', 'ka', 'ke', 'le', 'me', 'pe', 're', 'se', 'şe', 'te', 'fe', 'ze', 'es', 'em', 'ef', 'pi', 'ti', 'di', 'ey', 'kyu'}
+EDGE = {'ve', 'ki', 'o', 'a', 'e', 'en', 'el', 'ay', 'bi', 'he', 'ye', 'ı', 'i', 'u', 'ü', 'ö'}
+CAP = re.compile(r'^[A-ZÇĞİÖŞÜ]$')
+_isnum = lambda c: bool(c) and c.replace(' ', '').isdigit()   # a number run token can hold spaces ('0 532')
+
+
+def _spelling(runs):
+    """True when the text spells something letter by letter: a spaced-capital run of >= 4, or a single capital next to a digit token."""
+    cores = [_split(t)[1] for t, _, _ in runs]; run = 0
+    for x, c in enumerate(cores):
+        if CAP.match(c):
+            run += 1
+            if run >= 4: return True
+            if x + 1 < len(cores) and _isnum(cores[x + 1]): return True
+        else: run = 0
+    return False
+
+
+def _letters(runs):
+    """[(token, i, j)] -> same with letter runs joined (spans merged)."""
+    out, k, n = [], 0, len(runs); spell = _spelling(runs)
+    while k < n:
+        pre, core, post = _split(runs[k][0])
+        # L1 spaced capitals
+        if CAP.match(core) and not post and k + 1 < n:
+            m = k
+            while m + 1 < n:
+                p0, c1, p1 = _split(runs[m + 1][0])
+                if p0 or not CAP.match(c1): break
+                m += 1
+                if p1: break
+            joined = ''.join(_split(runs[x][0])[1] for x in range(k, m + 1))
+            if 1 <= m - k <= 2 and not spell and joined != 'AŞ' and not (m + 1 < n and _isnum(_split(runs[m + 1][0])[1])):
+                cs = [_split(runs[x][0]) for x in range(k, m + 1)]
+                out.append((pre + ''.join(c for _, c, _ in cs) + cs[-1][2], runs[k][1], runs[m][2])); k = m + 1; continue
+        # L2 letter names
+        if low(core) in NAME and not pre:
+            m = k
+            while m + 1 < n and not _split(runs[m][0])[2]:
+                p0, c1, p1 = _split(runs[m + 1][0])
+                if p0 or low(c1) not in NAME: break
+                m += 1
+            a, b = k, m
+            while a < b and low(_split(runs[a][0])[1]) in EDGE: a += 1
+            while b > a and low(_split(runs[b][0])[1]) in EDGE: b -= 1
+            ok = lambda a, b: (lambda nm: len(nm) >= 2 and (sum(x in STRONG for x in nm) >= 2 or (len(nm) >= 3 and any(x in STRONG for x in nm))))(
+                [low(_split(runs[x][0])[1]) for x in range(a, b + 1)])
+            if ok(a, b):   # v2: a de / ne at either edge is dropped when the rest still qualifies ('ne es em es' -> ne SMS; 'de ne es' -> DNS)
+                while low(_split(runs[a][0])[1]) in ('de', 'ne') and ok(a + 1, b): a += 1
+                while low(_split(runs[b][0])[1]) in ('de', 'ne') and ok(a, b - 1): b -= 1
+            names = [low(_split(runs[x][0])[1]) for x in range(a, b + 1)]
+            if ok(a, b):
+                out.extend(runs[k:a])
+                out.append((''.join(NAME[x] for x in names) + _split(runs[b][0])[2], runs[a][1], runs[b][2]))
+                out.extend(runs[b + 1:m + 1]); k = m + 1; continue
+        out.append(runs[k]); k += 1
     return out
 
 

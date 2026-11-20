@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.5
+
+- Turkish ITN: a date read with digits no longer runs into the year ('sıfır altı sıfır dokuz bin dokuz yüz altmış üç' -> '0 6 0 9 1963',
+  was '0 6 0 9963'; 'yirmi üç dokuz bin dokuz yüz seksen sekiz' -> '23 9 1988'). Amounts are unchanged ('kırk beş bin dokuz yüz' -> '45900').
+- Turkish ITN joins acronyms: 2-3 spaced capitals ('T L' -> 'TL', 'E F T' -> 'EFT') and runs of letter names ('es em es' -> 'SMS',
+  'de ne es' -> 'DNS', 'be de de ka' -> 'BDDK'). Codes and letter-by-letter spellings stay spaced ('E V 4 4', 'A R S L A N'), so do
+  'A Ş' and ordinary words that are also letter names ('ne de olsa', 'ay be'). On Turkish call transcripts this lowers WER by 0.07-0.13
+  points (per-clip, held-out call sets); model outputs are unchanged.
+
 ## 0.6.4
 
 - Turkish ITN writes numbers the way call transcripts do (all Turkish models; on by default, `itn=False` turns it off):
