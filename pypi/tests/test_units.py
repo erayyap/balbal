@@ -111,6 +111,15 @@ def test_itn_proper_noun_apostrophe(spoken, written):
     assert itn_text(spoken) == written
 
 
+@pytest.mark.parametrize('spoken,written', [
+    ('Ay di yedi.', 'ID.7.'), ('Volkswagen ay di yedi ay di yedi', 'Volkswagen ID.7 ID.7'), ("golfe bakıyordum ay di üçe döndüm", "golfe bakıyordum ID.3'e döndüm"),
+    ('Yani T S İ benzinli olsun.', 'Yani TSI benzinli olsun.'), ('Golf GTİ olur.', 'Golf GTI olur.'), ('Golf bir buçuk E T S İ.', 'Golf 1.5 eTSI.'),
+    ('iki buçuk TDİ', '2.5 TDI'), ('geçen ay di bu', 'geçen ay di bu'), ('saat bir buçuk', 'saat bir buçuk'), ('Ay di ne demek', 'Ay di ne demek'),
+])
+def test_itn_car_models(spoken, written):
+    assert itn_text(spoken) == written
+
+
 def test_itn_words_proper_noun_keeps_timing():
     ws = [dict(word=w, start=float(i), end=i + 0.5) for i, w in enumerate(['Ahmetle', 'iki', 'yüz'])]
     assert [(w['word'], w['start'], w['end']) for w in itn_words(ws)] == [("Ahmet'le", 0.0, 0.5), ('200', 1.0, 2.5)]

@@ -34,6 +34,9 @@ The balbal models are trained on words-only labels, so it writes numbers as word
   plural, a name that is itself listed is never split. In cased text the name takes its written form; in all-lowercase text it stays lowercase
   ("nihat'la").
 
+  0.6.9: Volkswagen model and engine names as the maker writes them: 'ay di 7' -> 'ID.7', 'TSİ' -> 'TSI', 'E T S İ' -> 'eTSI',
+  'bir buçuk TSI' -> '1.5 TSI'.
+
 Known ambiguity: 'doksan bir' for a spoken 'doksan, bir' reads as 91.
 """
 import re
@@ -131,7 +134,8 @@ def _itn_runs(toks):
         if tok is not None: out.append((tok, s, e))
         a = e
     cased = any(c.isupper() for t in toks for c in t)
-    return [(_proper(t, cased) if j - i == 1 and t == toks[i] else t, i, j) for t, i, j in out]   # 0.6.8: untouched tokens only
+    out = [(_proper(t, cased) if j - i == 1 and t == toks[i] else t, i, j) for t, i, j in out]   # 0.6.8: untouched tokens only
+    return _car_models(out)                                                                         # 0.6.9
 
 
 VAL = {**UNIT, **TENS, 'yüz': 100, 'bin': 1000}
@@ -434,6 +438,33 @@ def email_itn(text):
     toks = text.split()
     for s, e, tok in reversed(email_spans(toks)): toks[s:e] = [tok]
     return ' '.join(toks)
+
+
+# ---- car model and engine names (0.6.9) ---------------------------------------------------------------------------------------------------
+_ENGINE = re.compile(r"^(e?TS|GT|TD|eTD)[İI]((?:['’][a-zçğıöşü]+)?[.,!?;:]*)$")
+_ID_NUM = re.compile(r"^(\d)((?:['’][a-zçğıöşü]+)?[.,!?;:]*)$")
+_ENGINE_W = re.compile(r"^(e?TS|GT|e?TD)I(['’]|[.,!?;:]|$)")
+_HALF = {'bir': '1.5', 'iki': '2.5', 'Bir': '1.5', 'İki': '2.5', '1': '1.5', '2': '2.5'}
+
+
+def _car_models(out):
+    """Volkswagen model and engine names as the maker writes them: 'ay di 4' -> 'ID.4' (and "ay di üçe" -> "ID.3'e"), 'TSİ' / 'GTİ' / 'TDİ'
+    -> 'TSI' / 'GTI' / 'TDI', spelled 'E T S İ' -> 'eTSI', 'bir buçuk' / 'iki buçuk' before an engine name -> '1.5' / '2.5'."""
+    res, k = [], 0
+    while k < len(out):
+        t, i, j = out[k]; nxt = [x[0] for x in out[k + 1:k + 4]]
+        if t.lower() == 'ay' and len(nxt) >= 2 and nxt[0].lower() == 'di' and _ID_NUM.match(nxt[1]):
+            res.append(('ID.' + nxt[1], i, out[k + 2][2])); k += 3; continue
+        if t == 'E' and len(nxt) == 3 and nxt[:2] == ['T', 'S'] and re.match(r"^[İI][.,!?;:]*$", nxt[2]):
+            res.append(('eTSI' + nxt[2][1:], i, out[k + 3][2])); k += 4; continue
+        m = _ENGINE.match(t)
+        if m: t = m.group(1).replace('ETD', 'eTD') + 'I' + m.group(2)
+        res.append((t, i, j)); k += 1
+    for k in range(len(res) - 2):                                     # 'bir buçuk' + engine -> '1.5'
+        (a, i, _), (b, _, j), (c, _, _) = res[k:k + 3]
+        if a in _HALF and b == 'buçuk' and _ENGINE_W.match(c):
+            res[k:k + 2] = [(_HALF[a], i, j), ('', j, j)]
+    return [x for x in res if x[0] != '']
 
 
 # ---- proper noun + suffix -> apostrophe (0.6.8) ---------------------------------------------------------------------------------------------

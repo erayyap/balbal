@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.9
+
+- Turkish ITN writes Volkswagen model and engine names as the maker does: 'ay di 7' -> 'ID.7' ("ay di üçe" -> "ID.3'e"), 'TSİ' / 'GTİ' /
+  'TDİ' -> 'TSI' / 'GTI' / 'TDI', spelled 'E T S İ' -> 'eTSI', 'bir buçuk' / 'iki buçuk' before an engine name -> '1.5' / '2.5'. 'ay' and
+  'di' elsewhere stay words. On a held-out call-transcript set 12 clips get better and 1 gets worse; model outputs are unchanged.
+
 ## 0.6.8
 
 - Turkish ITN writes the apostrophe of a proper noun with a case suffix: 'ahmetle' -> "Ahmet'le", 'nihatın' -> "Nihat'ın", 'ankarada' ->
