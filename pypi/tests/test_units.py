@@ -82,6 +82,30 @@ def test_itn_letters(spoken, written):
     assert itn_text(spoken) == written
 
 
+@pytest.mark.parametrize('spoken,written', [
+    ('Mail adresim burak nokta çelik at gmail nokta com, teşekkürler.', 'Mail adresim burak.celik@gmail.com, teşekkürler.'),
+    ('mega alt tire ufuk bin dokuz yüz doksan beş at yandex nokta com', 'mega_ufuk1995@yandex.com'),
+    ('Nazlı nokta çelik et eksikozmetik nokta bel nokta T R.', 'nazli.celik@eksikozmetik.bel.tr.'),
+    ('ayşe at hotmail nokta com nokta te re', 'ayse@hotmail.com.tr'), ('depo tire zengin at egekonfeksiyon nokta ko', 'depo-zengin@egekonfeksiyon.co'),
+    ('Edirne Rize Denizli Edirne Muş alt tire Adana Rize Sinop Lüleburgaz Adana Niğde at superonline nokta com.', 'erdem_arslan@superonline.com.'),
+    ('M R S alt tire sevda et inci nokta ka on iki nokta T R', 'mrs_sevda@inci.k12.tr'), ('lale artı depo at gmail nokta com', 'lale+depo@gmail.com'),
+    ('Ahmet nokta Arslan A R S L A N at email nokta com.', 'ahmet.arslan@email.com.'), ('Sevda Ekiz at gmail nokta com', 'sevdaekiz@gmail.com'),
+    ('iki adres var ali at gmail nokta com ve veli at yandex nokta com', '2 adres var ali@gmail.com ve veli@yandex.com'),
+    # 'at' / 'et' as words, and no domain with a known ending: unchanged
+    ('Ata bin at yarışı nokta koydum.', 'Ata bin at yarışı nokta koydum.'), ('Bunu et ve bitir.', 'Bunu et ve bitir.'),
+    ('Ben de et yedim nokta', 'Ben de et yedim nokta'), ('Kırmızı at nokta com', 'Kırmızı at nokta com'),
+])
+def test_itn_email(spoken, written):
+    assert itn_text(spoken) == written
+
+
+def test_itn_words_email_keeps_timing():
+    ws = [dict(word=w, start=float(i), end=i + 0.5, confidence=0.9 - i / 100) for i, w in enumerate('ali at gmail nokta com tamam'.split())]
+    out = itn_words(ws)
+    assert [w['word'] for w in out] == ['ali@gmail.com', 'tamam'] and out[0]['start'] == 0.0 and out[0]['end'] == 4.5
+    assert abs(out[0]['confidence'] - 0.86) < 1e-9
+
+
 def test_itn_words_letters_keep_timing():
     ws = [dict(word=w, start=float(i), end=i + 1.0) for i, w in enumerate(['es', 'em', 'es', 'geldi'])]
     out = itn_words(ws)

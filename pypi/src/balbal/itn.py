@@ -25,6 +25,9 @@ The balbal models are trained on words-only labels, so it writes numbers as word
   0.6.6: decades and centuries with a plural suffix keep the whole number ('bin sekiz yüzlerden' -> "1800'lerden", was '1008 yüzlerden';
   'bin dokuz yüz seksenlerde' -> "1980'lerde", 'iki binlerin' -> "2000'lerin").
 
+  0.6.7: spoken e-mail addresses become written addresses ('burak nokta çelik at gmail nokta com' -> 'burak.celik@gmail.com'; see the
+  e-mail section at the end).
+
 Known ambiguity: 'doksan bir' for a spoken 'doksan, bir' reads as 91.
 """
 import re
@@ -114,8 +117,14 @@ def itn_words(words):
 
 
 def _itn_runs(toks):
-    """Tokens -> [(output token, first input index, end input index)]: number runs, the writing conventions (_conventions), letter runs (_letters)."""
-    return _letters(_conventions(_number_runs(toks)))
+    """Tokens -> [(output token, first input index, end input index)]: spoken e-mail addresses (email_spans, 0.6.7) first, then on the text
+    between them number runs, the writing conventions (_conventions) and letter runs (_letters)."""
+    out, a = [], 0
+    for s, e, tok in email_spans(toks) + [(len(toks), len(toks), None)]:
+        out += [(t, i + a, j + a) for t, i, j in _letters(_conventions(_number_runs(toks[a:s])))]
+        if tok is not None: out.append((tok, s, e))
+        a = e
+    return out
 
 
 VAL = {**UNIT, **TENS, 'yüz': 100, 'bin': 1000}
@@ -259,6 +268,165 @@ def _number_runs(toks):
         if len(words) == 1 and words[0] in AMBIG: out.append((toks[i], i, i + 1)); i += 1; continue
         out.append((pre + ' '.join(parse(words)) + last_post, i, j)); i = j
     return out
+
+
+# ---- e-mail addresses (0.6.7) ----
+# Spoken e-mail addresses -> written addresses (2026-11-21, balbal 0.6.7).
+#
+# Model output spells addresses the way people say them: 'burak nokta çelik at live nokta com', 'mega alt tire ufuk bin dokuz yüz doksan beş
+# et yandex nokta com', city-name spelling 'Edirne Rize Denizli ... at superonline nokta com', letter runs 'T R'. This pass rewrites such a span
+# as one token 'burak.celik@live.com'. It fires only on 'at' / 'et' / '@' followed by a domain of >= 2 parts joined by 'nokta' whose last part is a
+# known top-level domain, so ordinary sentences ('at', 'et' as Turkish words) are left alone.
+#
+# Local part (before at): tokens back from 'at' while they are connectors (nokta, tire, alt tire, alt çizgi), letters / letter names, city-name
+# spelling, number words, or plain words (at most 3, stopping at punctuation or a stop word such as 'adresim'). Pieces: connectors -> . - _,
+# a run of >= 2 city names -> their initials (Turkish spelling alphabet), number-word runs -> digits, single letters as is; everything lower-cased
+# and folded to ASCII (ç->c, ğ->g, ı->i, ö->o, ş->s, ü->u), as addresses are written.
+CITY = {'adana': 'a', 'bursa': 'b', 'ceyhan': 'c', 'çanakkale': 'c', 'denizli': 'd', 'edirne': 'e', 'fatsa': 'f', 'giresun': 'g', 'hatay': 'h',
+        'ısparta': 'i', 'isparta': 'i', 'izmir': 'i', 'jandarma': 'j', 'kars': 'k', 'lüleburgaz': 'l', 'muş': 'm', 'niğde': 'n', 'ordu': 'o',
+        'ödemiş': 'o', 'polatlı': 'p', 'rize': 'r', 'sinop': 's', 'şırnak': 's', 'tokat': 't', 'uşak': 'u', 'ünye': 'u', 'van': 'v',
+        'yozgat': 'y', 'zonguldak': 'z', 'ankara': 'a', 'antalya': 'a', 'istanbul': 'i', 'muğla': 'm', 'malatya': 'm', 'samsun': 's', 'trabzon': 't',
+        'kayseri': 'k', 'konya': 'k'}
+_FOLD = str.maketrans({'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u', 'â': 'a', 'î': 'i', 'û': 'u'})
+CITY.update({k.translate(_FOLD): v for k, v in list(CITY.items())})
+LETTER = {'be': 'b', 'ce': 'c', 'de': 'd', 'fe': 'f', 'ge': 'g', 'he': 'h', 'je': 'j', 'ke': 'k', 'ka': 'k', 'le': 'l', 'me': 'm', 'ne': 'n', 'pe': 'p',
+          're': 'r', 'se': 's', 'te': 't', 've': 'v', 'ye': 'y', 'ze': 'z', 'ku': 'q', 'kü': 'q', 'iks': 'x', 'dabılyu': 'w'}
+TLD = {'com', 'net', 'org', 'edu', 'gov', 'tr', 'co', 'me', 'io', 'info', 'biz', 'av', 'bel', 'k12', 'mil', 'pol', 'gen', 'web', 'tv', 'app',
+       'dev', 'ai', 'uk', 'de', 'eu', 'us'}
+AT = {'at', 'et', '@'}
+EMAIL_GLUE = 2          # plain words glued into a local part without connectors ('Sevda Ekiz at' -> sevdaekiz)
+STOP = {'adresim', 'adres', 'adresi', 'adresimiz', 'mail', 'mailim', 'maili', 'mailimiz', 'eposta', 'e-posta', 'epostam', 'postam', 'benim',
+        'şu', 'su', 'evet', 'tamam', 'olarak', 'şöyle', 'soyle', 'yazıyorum', 'yazın', 'yazar', 'misiniz', 'mısınız', 'hanım', 'bey', 've',
+        'ile', 'de', 'da', 'bir', 've', 'hocam', 'efendim', 'iste', 'işte', 'yani', 'aynen', 'mailine', 'mailinize', 'adresine', 'adresinize',
+        'gönderin', 'gönderir', 'atın', 'atar', 'şeyi', 'şey', 'size', 'bana', 'onu', 'bu', 'o', 'var', 'yok', 'olan', 'için', 'gibi', 'ama',
+        'fakat', 'ben', 'sen', 'biz', 'siz', 'adım', 'ismim', 'adı', 'ismi', 'ki', 'mi', 'mı', 'mu', 'mü', 'ya', 'hayır', 'peki', 'yazayım',
+        'söyleyeyim', 'kaydedin', 'not', 'alın', 'yazdınız', 'gönderdim', 'gönderiyorum', 'attım', 'şimdi', 'tekrar', 'yeni', 'eski', 'hani', 'değil', 'degil', 'evet'}
+NUMW = {'sıfır', 'bir', 'iki', 'üç', 'dört', 'beş', 'altı', 'yedi', 'sekiz', 'dokuz', 'on', 'yirmi', 'otuz', 'kırk', 'elli', 'altmış', 'yetmiş',
+        'seksen', 'doksan', 'yüz', 'bin'}
+_EP = re.compile(r'^(.*?)([.,!?;:]*)$')
+
+
+def _bare(tok):
+    return _EP.match(tok).group(1)
+
+
+def _num(words):
+    out = itn_text(' '.join(words))
+    return out.replace(' ', '') if re.fullmatch(r'[\d ]+', out) else None
+
+
+def _piece(words):
+    """Tokens of one segment (no connectors) -> written text, or None when they do not form an address piece."""
+    lw = [low(_bare(w)) for w in words]
+    out, i = [], 0
+    while i < len(lw):
+        w = lw[i]
+        if w in NUMW:
+            j = i
+            while j < len(lw) and lw[j] in NUMW: j += 1
+            n = _num(lw[i:j])
+            if n is None: return None
+            out.append(n); i = j; continue
+        if w in CITY and ((i + 1 < len(lw) and lw[i + 1] in CITY) or (i > 0 and lw[i - 1] in CITY)):
+            out.append(CITY[w]); i += 1; continue
+        if w in ('çift', 'cift') and i + 1 < len(lw) and lw[i + 1] == 've':
+            out.append('w'); i += 2; continue
+        if len(w) == 1 or w.isdigit(): out.append(w); i += 1; continue
+        if w in LETTER and len(lw) > 1: out.append(LETTER[w]); i += 1; continue
+        j = i + 1
+        while j < len(lw) and len(lw[j]) == 1: j += 1
+        if j - i > 2 and ''.join(lw[i + 1:j]).translate(_FOLD) == w.translate(_FOLD): out.append(w); i = j; continue   # spelled confirmation
+        out.append(w); i += 1
+    return ''.join(out).translate(_FOLD)
+
+
+def _domain(toks, k):
+    """toks[k:] after the at sign -> (written domain, end index, trailing punctuation) or None."""
+    segs, cur, j = [], [], k
+    while j < len(toks):
+        b = low(_bare(toks[j]))
+        if b == 'nokta':
+            if not cur: return None
+            segs.append(cur); cur = []; j += 1; continue
+        if cur and len(cur) >= 4: break
+        cur.append(toks[j]); j += 1
+        if _bare(toks[j - 1]) != toks[j - 1]: break           # punctuation ends the address
+        nxt = low(_bare(toks[j])) if j < len(toks) else None
+        if segs and nxt != 'nokta':
+            ahead = [low(_bare(x)) for x in toks[j:j + 4 - len(cur) + 1]]
+            if 'nokta' in ahead and all(_bare(x) == x for x in toks[j - 1:j + ahead.index('nokta')]): continue   # multi-token middle part
+            # last part: one TLD token, or two single letters ('T R')
+            if len(cur) == 1 and len(_bare(cur[0])) == 1 and nxt and len(nxt) == 1: cur.append(toks[j]); j += 1
+            elif len(cur) == 1 and low(_bare(cur[0])) in LETTER and nxt in LETTER: cur.append(toks[j]); j += 1   # 'te re' = tr
+            break
+    if cur: segs.append(cur)
+    if len(segs) < 2: return None
+    FIX = {'ko': 'co', 'kom': 'com'}
+    last = ''.join(LETTER.get(low(_bare(x)), low(_bare(x))) if len(segs[-1]) > 1 else low(_bare(x)) for x in segs[-1]).translate(_FOLD)
+    if FIX.get(last, last) not in TLD: return None
+    parts = [_piece(s) for s in segs]
+    if any(p is None or p == '' for p in parts): return None
+    parts = [FIX.get(x, x) for x in parts]
+    return '.'.join(parts), j, _EP.match(toks[j - 1]).group(2)
+
+
+def _local(toks, a):
+    """Local part ending before index a -> (written local part, start index) or None."""
+    i, plain, pieces = a, 0, []
+    while i > 0:
+        t = toks[i - 1]; b = low(_bare(t))
+        if _bare(t) != t and not (_EP.match(t).group(2) == ',' and pieces and (b in CITY or b == 'nokta')
+                                  and (pieces[-1][0] == 'sep' or low(_bare(pieces[-1][1])) in CITY)): break   # punctuation before the address
+        if b in ('nokta', 'tire', 'çizgi', 'artı', 'arti'):
+            sep = {'nokta': '.', 'tire': '-', 'çizgi': '-', 'artı': '+', 'arti': '+'}[b]
+            if i >= 2 and low(toks[i - 2]) == 'alt': sep = '_'; i -= 1
+            pieces.append(('sep', sep)); i -= 1; continue
+        if b == 've' and i >= 2 and low(toks[i - 2]) in ('çift', 'cift'):          # 'çift ve' = w
+            pieces.append(('w', t)); pieces.append(('w', toks[i - 2])); i -= 2; continue
+        if (b in STOP and not (b in NUMW or len(b) == 1)) or re.fullmatch(r'[eaıi]*[eaı]{2,}', b): break    # stop words, fillers (eee, ııı)
+        is_plain = not (b in NUMW or b in CITY or len(b) == 1 or b.isdigit() or b in LETTER)
+        if is_plain:
+            # with a connector in the address, a plain word must sit right before one ('Belli kamile nokta akkuş' -> kamile.akkus);
+            # without connectors up to 3 glued words ('Ahmet Erdem P M K at' -> ahmeterdempmk)
+            if any(k == 'sep' for k, _ in pieces):
+                if pieces[-1][0] != 'sep': break
+            elif plain >= EMAIL_GLUE: break
+            else: plain += 1
+        pieces.append(('w', t)); i -= 1
+    if not pieces or pieces[-1][0] == 'sep': return None
+    pieces.reverse()
+    out, run = [], []
+    for kind, v in pieces + [('sep', '')]:
+        if kind == 'w': run.append(v); continue
+        if run:
+            p = _piece(run)
+            if p is None: return None
+            out.append(p); run = []
+        out.append(v)
+    return ''.join(out), i
+
+
+def email_spans(toks):
+    """Tokens -> [(start, end, written address)] for spoken e-mail addresses, left to right, non-overlapping."""
+    out, k, floor = [], 0, 0
+    while k < len(toks):
+        if low(_bare(toks[k])) in AT and k > floor and _bare(toks[k]) == toks[k]:
+            d = _domain(toks, k + 1)
+            l = _local(toks[floor:], k - floor) if d else None
+            if d and l:
+                (dom, end, punct), (loc, start) = d, l
+                out.append((start + floor, end, f'{loc}@{dom}{punct}'))
+                k = floor = end
+                continue
+        k += 1
+    return out
+
+
+def email_itn(text):
+    """Only the e-mail rewrite: spoken addresses in a model output -> written addresses; other text unchanged."""
+    toks = text.split()
+    for s, e, tok in reversed(email_spans(toks)): toks[s:e] = [tok]
+    return ' '.join(toks)
 
 
 if __name__ == '__main__':

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.7
+
+- Turkish ITN writes spoken e-mail addresses as addresses: 'burak nokta çelik at gmail nokta com' -> 'burak.celik@gmail.com',
+  'mega alt tire ufuk bin dokuz yüz doksan beş at yandex nokta com' -> 'mega_ufuk1995@yandex.com', 'T R' / 'te re' -> 'tr', 'ko' -> 'co'.
+  Spellings with the Turkish city alphabet ('Edirne Rize Denizli ...') become their letters, 'artı' becomes '+', and a word followed by its
+  own letter-by-letter spelling is written once. It only fires on 'at' / 'et' followed by a domain that ends in a known suffix (com, net,
+  org, edu, gov, tr, ...), so 'at' and 'et' as Turkish words stay. On 109 held-out call clips that dictate an address, WER on those clips
+  goes from 21 % to 2 %; transcripts without an address are unchanged; model outputs are unchanged.
+
 ## 0.6.6
 
 - Turkish ITN: decades and centuries with a plural suffix keep the whole number ('bin sekiz yüzlerden' -> "1800'lerden", was
