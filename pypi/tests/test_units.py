@@ -99,6 +99,23 @@ def test_itn_email(spoken, written):
     assert itn_text(spoken) == written
 
 
+@pytest.mark.parametrize('spoken,written', [
+    ("Ahmetle konuştum.", "Ahmet'le konuştum."), ("nihatın arabası ankarada", "nihat'ın arabası ankara'da"),
+    ("Dün Nihatın yanındaydım.", "Dün Nihat'ın yanındaydım."), ("Mehmetten haber var mı?", "Mehmet'ten haber var mı?"),
+    ("Toplantı Ankarada olacak.", "Toplantı Ankara'da olacak."), ("Antalyaya gidiyorum.", "Antalya'ya gidiyorum."),
+    # ordinary words that look like a name + suffix, names that are names themselves, dative after a person name, plural: unchanged
+    ("Peki günler geçti.", "Peki günler geçti."), ("Sabriye Hanım geldi.", "Sabriye Hanım geldi."), ("Nurdan aradı.", "Nurdan aradı."),
+    ("Nihata söyledim.", "Nihata söyledim."), ("Ahmetler geldi.", "Ahmetler geldi."), ("Nihat'ın arabası.", "Nihat'ın arabası."),
+])
+def test_itn_proper_noun_apostrophe(spoken, written):
+    assert itn_text(spoken) == written
+
+
+def test_itn_words_proper_noun_keeps_timing():
+    ws = [dict(word=w, start=float(i), end=i + 0.5) for i, w in enumerate(['Ahmetle', 'iki', 'yüz'])]
+    assert [(w['word'], w['start'], w['end']) for w in itn_words(ws)] == [("Ahmet'le", 0.0, 0.5), ('200', 1.0, 2.5)]
+
+
 def test_itn_words_email_keeps_timing():
     ws = [dict(word=w, start=float(i), end=i + 0.5, confidence=0.9 - i / 100) for i, w in enumerate('ali at gmail nokta com tamam'.split())]
     out = itn_words(ws)

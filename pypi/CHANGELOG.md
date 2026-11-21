@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.8
+
+- Turkish ITN writes the apostrophe of a proper noun with a case suffix: 'ahmetle' -> "Ahmet'le", 'nihatın' -> "Nihat'ın", 'ankarada' ->
+  "Ankara'da", 'antalyaya' -> "Antalya'ya". The names (Turkish given names and surnames from Wikidata, places, car models, companies) are listed
+  in `balbal/itn_names.py` and only kept where neither the name nor its inflected forms are ordinary words, so 'peki', 'günler', 'site'
+  stay. No dative after a person name ('Sabriye', 'Habibe' are names), no plural, and a listed name is never split ('Nurdan'). In cased text
+  the name takes its written form; in all-lowercase text it stays lowercase ("nihat'ın"). On held-out Turkish call-transcript sets scored
+  with a WER that splits words at apostrophes, per-clip WER drops 0.6-0.7 points; scoring that removes apostrophes (FLEURS, our own
+  metrics) is unchanged, and model outputs are unchanged.
+
 ## 0.6.7
 
 - Turkish ITN writes spoken e-mail addresses as addresses: 'burak nokta çelik at gmail nokta com' -> 'burak.celik@gmail.com',

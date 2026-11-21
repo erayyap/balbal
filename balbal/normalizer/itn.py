@@ -28,6 +28,12 @@ The balbal models are trained on words-only labels, so it writes numbers as word
   0.6.7: spoken e-mail addresses become written addresses ('burak nokta çelik at gmail nokta com' -> 'burak.celik@gmail.com'; see the
   e-mail section at the end).
 
+  0.6.8: a proper noun with a case suffix gets its apostrophe (TDK): 'ahmetle' -> "Ahmet'le", 'nihatın' -> "Nihat'ın", 'ankarada' ->
+  "Ankara'da". Names come from itn_names (Turkish given names and surnames, places, car models, companies) and are kept only where neither the
+  name nor its inflected forms are ordinary words (no 'Pek'i', 'Gün'ler'); no dative after a person name (Sabriye, Habibe are names), no
+  plural, a name that is itself listed is never split. In cased text the name takes its written form; in all-lowercase text it stays lowercase
+  ("nihat'la").
+
 Known ambiguity: 'doksan bir' for a spoken 'doksan, bir' reads as 91.
 """
 import re
@@ -124,7 +130,8 @@ def _itn_runs(toks):
         out += [(t, i + a, j + a) for t, i, j in _letters(_conventions(_number_runs(toks[a:s])))]
         if tok is not None: out.append((tok, s, e))
         a = e
-    return out
+    cased = any(c.isupper() for t in toks for c in t)
+    return [(_proper(t, cased) if j - i == 1 and t == toks[i] else t, i, j) for t, i, j in out]   # 0.6.8: untouched tokens only
 
 
 VAL = {**UNIT, **TENS, 'yüz': 100, 'bin': 1000}
@@ -427,6 +434,41 @@ def email_itn(text):
     toks = text.split()
     for s, e, tok in reversed(email_spans(toks)): toks[s:e] = [tok]
     return ' '.join(toks)
+
+
+# ---- proper noun + suffix -> apostrophe (0.6.8) ---------------------------------------------------------------------------------------------
+from .itn_names import PERSON as _PERSON_NAMES, OTHER as _OTHER_NAMES, NEVER as _NEVER_SPLIT
+
+
+def _tr_lower(s):
+    return s.replace('İ', 'i').replace('I', 'ı').lower()
+
+
+_PROPER = {_tr_lower(n): n for n in _PERSON_NAMES}
+_PROPER.update({_tr_lower(n): n for n in _OTHER_NAMES})                    # a place / brand spelling wins over a same-spelled person name
+_PERSON = frozenset(_tr_lower(n) for n in _PERSON_NAMES) - {_tr_lower(n) for n in _OTHER_NAMES}
+_NEVER = frozenset(_NEVER_SPLIT)
+_PV = set('aeıioöuü')
+_PP = re.compile(r"^(.*?)([.,!?;:]*)$")
+
+
+def _proper_suffixes(stem):
+    """Case suffixes a name takes, by vowel harmony and buffer letters: a/e/ya/ye, ı/i/u/ü/yı.., da/ta.., dan/tan.., ın/nın.., -daki, la/yla."""
+    v = next((c for c in reversed(stem) if c in _PV), 'e'); back = v in 'aıou'; rnd = v in 'ouöü'
+    A = 'a' if back else 'e'; I = ('u' if rnd else 'ı') if back else ('ü' if rnd else 'i'); D = 't' if stem[-1] in 'çfhkpsşt' else 'd'
+    y, n = ('y', 'n') if stem[-1] in _PV else ('', '')
+    return {y + A, y + I, n + I + 'n', D + A, D + A + 'n', D + A + 'ki', y + 'l' + A}
+
+
+def _proper(tok, cased):
+    """'nihatla' -> "Nihat'la" (cased text) / "nihat'la" (lowercase text); any other token unchanged."""
+    core, punct = _PP.match(tok).groups(); low = _tr_lower(core)
+    if not core or not core[0].isalpha() or "'" in core or '’' in core or low in _PROPER or low in _NEVER: return tok
+    for k in range(len(low) - 1, 2, -1):
+        stem, suf = low[:k], low[k:]
+        if stem in _PROPER and suf in _proper_suffixes(stem) and not (stem in _PERSON and suf in ('a', 'e', 'ya', 'ye')):
+            return (_PROPER[stem] if cased else core[:k]) + "'" + core[k:] + punct
+    return tok
 
 
 if __name__ == '__main__':
