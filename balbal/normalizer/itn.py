@@ -12,7 +12,7 @@ The balbal models are trained on words-only labels, so it writes numbers as word
   apostrophe ('saat ikide' -> "saat 2'de", 'beşten' -> "5'ten", 'ayın onunda' -> "ayın 10'unda", 'yirmi dördüne' -> "24'üne");
   possessive forms (dokuzu, yirmisinde) and the ambiguous stems bir / on / yüz / bin (biri, onu, ona) only after a time or date word, ordinals
   (ikinci), distributives (beşer) and the idiom 'ikide bir' stay words; a lone on / yüz / bin before a unit ('on gün', 'bin lira') or as the
-  whole text becomes digits; 'yüzde 20' -> '%20'; a half hour after a time word -> 'saat 8.30', "sabah 8.30'da".
+  whole text became digits until 0.6.10; 'yüzde 20' -> '%20'; a half hour after a time word -> 'saat 8.30', "sabah 8.30'da".
 - itn_digits(text): scoring form for already-normalized (lowercase, no punctuation) text. Numbers are spelled digit by
   digit ('doksan yüz yirmi üç' == 'dokuz sıfır bir iki üç' == '9 0 1 2 3'), removing the reading/grouping ambiguity of
   phone numbers and codes; digits already present are kept.
@@ -36,6 +36,9 @@ The balbal models are trained on words-only labels, so it writes numbers as word
 
   0.6.9: Volkswagen model and engine names as the maker writes them: 'ay di 7' -> 'ID.7', 'TSİ' -> 'TSI', 'E T S İ' -> 'eTSI',
   'bir buçuk TSI' -> '1.5 TSI'.
+
+  0.6.10: a lone on / yüz / bin that is the whole text stays a word again ('On.' -> 'On.', as in 0.6.3; 0.6.4 wrote '10.').
+  Before a unit it is still digits.
 
 Known ambiguity: 'doksan bir' for a spoken 'doksan, bir' reads as 91.
 """
@@ -184,7 +187,7 @@ def _conventions(runs):
             ctx = prev in (CTX_STRONG if w in STEM_AMBIG else CTX) or (prev.isdigit() and attached)
             if (kind == 'case' and w not in STEM_AMBIG) or ctx:
                 out.append((f"{v}'{suf}{post}", i, j)); continue
-        if lc in LONE and not pre and not prev.isdigit() and not (len(prev) == 1 and prev.isalpha()) and (nxt in UNITW or len(runs) == 1):   # on gün -> 10 gün; 'x bin lira' stays
+        if lc in LONE and not pre and not prev.isdigit() and not (len(prev) == 1 and prev.isalpha()) and nxt in UNITW:   # on gün -> 10 gün; 'x bin lira' stays; 0.6.10: a lone 'On.' stays a word
             out.append((f'{LONE[lc]}{post}', i, j)); continue
         out.append((tok, i, j))
     return out
@@ -322,6 +325,7 @@ def _bare(tok):
 
 
 def _num(words):
+    if len(words) == 1 and low(words[0]) in LONE: return str(LONE[low(words[0])])   # 0.6.10: a lone on / yüz / bin is a number inside an address
     out = itn_text(' '.join(words))
     return out.replace(' ', '') if re.fullmatch(r'[\d ]+', out) else None
 

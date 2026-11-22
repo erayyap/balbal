@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.10
+
+- Turkish ITN: a lone 'on' / 'yüz' / 'bin' that is the whole transcript stays a word again ('On.' -> 'On.', as in 0.6.3; 0.6.4-0.6.9 wrote '10.').
+  Before a unit it is still written with digits ('on gün' -> '10 gün', 'bin lira' -> '1000 lira'), and inside a spoken e-mail address it is
+  still a digit. Model outputs are unchanged.
+
 ## 0.6.9
 
 - Turkish ITN writes Volkswagen model and engine names as the maker does: 'ay di 7' -> 'ID.7' ("ay di üçe" -> "ID.3'e"), 'TSİ' / 'GTİ' /
