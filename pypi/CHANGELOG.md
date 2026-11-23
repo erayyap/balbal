@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.11
+
+- No functional change from 0.6.10: comment update in `itn.py` only.
+
 ## 0.6.10
 
 - Turkish ITN: a lone 'on' / 'yüz' / 'bin' that is the whole transcript stays a word again ('On.' -> 'On.', as in 0.6.3; 0.6.4-0.6.9 wrote '10.').
